@@ -83,6 +83,7 @@ function renderPagos() {
     stripeForm('test');
   }
   $('#pwForm').hidden = S.passwordInCloudflare;
+  renderMail(); renderBilling();
 }
 function stripeForm(mode) {
   const live = mode === 'live';
@@ -149,7 +150,8 @@ async function renderHome() {
   if (!S.stripe) w.push('<div class="warn">Stripe no está conectado: las reservas llegan como <b>solicitudes</b> sin pago. <button class="linkbtn" data-goto="pagos">Conectar Stripe</button></div>');
   else if (!S.webhook) w.push('<div class="warn">Falta STRIPE_WEBHOOK_SECRET: los pagos se confirman al volver el cliente a la web, pero conviene configurar el webhook.</div>');
   else if (S.stripeMode === 'test') w.push('<div class="warn">Stripe está en <b>modo de prueba</b>. Cambia a las claves «live» para cobrar de verdad.</div>');
-  if (!S.mail) w.push('<div class="warn">Los emails de confirmación están desactivados (falta RESEND_API_KEY). Las reservas se ven aquí igualmente.</div>');
+  if (!S.mail) w.push('<div class="warn">Los emails a los huéspedes están desactivados. <button class="linkbtn" data-goto="pagos">Actívalos en 1 minuto con tu Gmail</button></div>');
+  else if (!S.invoices) w.push('<div class="warn">Los emails están activos, pero falta completar los <button class="linkbtn" data-goto="pagos">datos de facturación</button> para que cada reserva lleve su factura.</div>');
   if (!S.feeds.length) w.push('<div class="warn">Aún no has conectado Airbnb ni Booking. <button class="linkbtn" data-goto="sincro">Conectar ahora</button></div>');
   $('#warnings').innerHTML = w.join('');
 
@@ -331,6 +333,8 @@ async function openBooking(id, cache) {
       <button class="btn primary" id="bSave">Guardar</button>
       ${b.status === 'pending' || b.status === 'expired' ? '<button class="btn" id="bConfirm">Confirmar reserva</button>' : ''}
       ${b.status === 'confirmed' || b.status === 'pending' ? `<button class="btn danger-ghost" id="bCancel">${isBlock ? 'Quitar bloqueo' : 'Cancelar reserva'}</button>` : ''}
+      ${!isBlock && b.status === 'confirmed' && b.email && S.mail ? `<button class="btn" id="bMail">${b.mail_sent_at ? 'Reenviar confirmación' : 'Enviar confirmación'}</button>` : ''}
+      ${!isBlock && b.status === 'confirmed' && S.invoices && b.total > 0 ? `<button class="btn" id="bInvoice">${b.invoice_no ? 'Factura ' + esc(b.invoice_no) : 'Crear factura'}</button>` : ''}
       ${b.email ? `<a class="btn" href="mailto:${esc(b.email)}?subject=${encodeURIComponent('Tu reserva ' + b.ref)}">Email</a>` : ''}
       ${b.phone ? `<a class="btn" href="https://wa.me/${esc(b.phone.replace(/\D/g, '').replace(/^(?!34)(\d{9})$/, '34$1'))}" target="_blank">WhatsApp</a>` : ''}
     </div>
@@ -344,7 +348,14 @@ async function openBooking(id, cache) {
     if (!isBlock) data.paid = !!f.get('paid');
     if (await act(api(`/api/admin/bookings/${b.id}`, 'PATCH', data), 'Guardado')) after();
   };
-  $('#bConfirm') && ($('#bConfirm').onclick = async () => { if (await act(api(`/api/admin/bookings/${b.id}`, 'PATCH', { status: 'confirmed' }), 'Reserva confirmada')) after(); });
+  $('#bConfirm') && ($('#bConfirm').onclick = async () => {
+    const notify = !isBlock && !!b.email && S.mail && confirm('¿Enviar al huésped el email de confirmación' + (S.invoices ? ' con su factura' : '') + '?');
+    const r = await api(`/api/admin/bookings/${b.id}`, 'PATCH', { status: 'confirmed', notify });
+    if (!r.ok) return toast(r.error, true);
+    toast(r.mailed ? 'Reserva confirmada y email enviado' : r.mailError ? 'Confirmada, pero el email falló: ' + r.mailError : 'Reserva confirmada', !!r.mailError); after();
+  });
+  $('#bMail') && ($('#bMail').onclick = async () => { const bt = $('#bMail'); bt.disabled = true; bt.textContent = 'Enviando…'; if (await act(api(`/api/admin/bookings/${b.id}/email`, 'POST'), 'Email enviado a ' + b.email)) after(); else { bt.disabled = false; bt.textContent = 'Reenviar confirmación'; } });
+  $('#bInvoice') && ($('#bInvoice').onclick = async () => { const w = window.open('', '_blank'); const r = await api(`/api/admin/bookings/${b.id}/invoice`, 'POST'); if (!r.ok) { w && w.close(); return toast(r.error, true); } if (w) w.location = r.url; else location.href = r.url; });
   $('#bCancel') && ($('#bCancel').onclick = async () => { if (!confirm(isBlock ? '¿Quitar este bloqueo?' : '¿Cancelar esta reserva? Las fechas quedarán libres.')) return; if (await act(api(`/api/admin/bookings/${b.id}`, 'PATCH', { status: 'cancelled' }), isBlock ? 'Bloqueo quitado' : 'Reserva cancelada')) after(); });
   m.showModal();
 }
@@ -505,6 +516,52 @@ $('#extraForm').onsubmit = async e => {
   if (await act(api(extraEditing ? '/api/admin/extras/' + extraEditing : '/api/admin/extras', extraEditing ? 'PUT' : 'POST', d), extraEditing ? 'Extra guardado' : 'Extra añadido')) { extraEditing = null; await refresh(); renderExtras(); }
 };
 
+
+// ---------- EMAILS ----------
+function renderMail() {
+  const c = $('#mailCard');
+  if (S.mail) {
+    c.innerHTML = `<div class="card-h"><h2>Emails a los huéspedes</h2></div>
+      <div class="stripe-ok">✓ Activados${S.mailUser ? ' · se envían desde ' + esc(S.mailUser) : ''}</div>
+      <p class="hint">Cada reserva pagada envía al huésped la confirmación con el resumen${S.invoices ? ' y su factura' : ''}, y a ti un aviso. Desde cada reserva puedes reenviarla.</p>
+      ${S.mailUser && S.mailUser !== 'Resend' ? '<div class="row-btns"><button class="btn" id="mailChange">Cambiar cuenta</button><button class="btn danger-ghost" id="mailOff">Desactivar</button></div>' : ''}
+      <div id="mailFormBox"></div>`;
+    $('#mailChange') && ($('#mailChange').onclick = mailForm);
+    $('#mailOff') && ($('#mailOff').onclick = async () => { if (confirm('¿Desactivar los emails? Los huéspedes dejarán de recibir la confirmación.') && await act(api('/api/admin/mail', 'DELETE'), 'Emails desactivados')) { await refresh(); renderPagos(); } });
+  } else {
+    c.innerHTML = `<div class="card-h"><h2>Emails a los huéspedes</h2></div><div id="mailFormBox"></div>`;
+    mailForm();
+  }
+}
+function mailForm() {
+  $('#mailFormBox').innerHTML = `<ol class="steps">
+      <li>Entra en <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">Contraseñas de aplicación de Google</a> con la cuenta desde la que quieres enviar (p. ej. ${esc(S.settings.email || 'tu Gmail')}). <span class="muted">Si te dice que no está disponible, activa antes la <a href="https://myaccount.google.com/signinoptions/twosv" target="_blank" rel="noopener">verificación en dos pasos</a>.</span></li>
+      <li>Escribe un nombre, por ejemplo <b>Web reservas</b>, y pulsa <b>Crear</b>. Google te enseña una clave de 16 letras.</li>
+      <li>Pega aquí tu Gmail y esa clave y pulsa <b>Activar</b>. Te llegará un email de prueba.</li>
+    </ol>
+    <div class="fgrid" style="grid-template-columns:1fr 1fr auto;align-items:end">
+      <label>Gmail<input id="mailUser" type="email" value="${esc(S.settings.email || '')}" autocomplete="off"></label>
+      <label>Contraseña de aplicación<input id="mailPass" placeholder="abcd efgh ijkl mnop" autocomplete="off" spellcheck="false"></label>
+      <button class="btn primary" id="mailGo" type="button">Activar</button>
+    </div>`;
+  $('#mailGo').onclick = async () => {
+    const btn = $('#mailGo'); btn.disabled = true; btn.textContent = 'Probando…';
+    const r = await api('/api/admin/mail', 'POST', { user: $('#mailUser').value, pass: $('#mailPass').value });
+    btn.disabled = false; btn.textContent = 'Activar';
+    if (!r.ok) return toast(r.error, true);
+    toast('Emails activados. Revisa tu bandeja: te he enviado una prueba'); await refresh(); renderPagos();
+  };
+}
+function renderBilling() {
+  const f = $('#billingForm');
+  for (const k of ['legal_name', 'legal_id', 'invoice_prefix', 'fiscal_address', 'vat_rate', 'vat_note']) f[k].value = S.settings[k] ?? '';
+}
+$('#billingForm').onsubmit = async e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(e.target).entries());
+  if (await act(api('/api/admin/settings', 'PUT', d), 'Datos de facturación guardados')) { await refresh(); renderPagos(); }
+};
+
 // ---------- SINCRONIZACIÓN ----------
 function renderSync() {
   const u = unit();
@@ -633,6 +690,7 @@ function renderPagos() {
     stripeForm('test');
   }
   $('#pwForm').hidden = S.passwordInCloudflare;
+  renderMail(); renderBilling();
 }
 function stripeForm(mode) {
   const live = mode === 'live';

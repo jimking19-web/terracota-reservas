@@ -170,6 +170,13 @@
       <label>Teléfono<input name="phone" type="tel" required autocomplete="tel"></label>
       <label class="full">País<input name="country" autocomplete="country-name" value="España"></label>
       <label class="full">Comentarios (hora estimada de llegada, peticiones…)<textarea name="notes" rows="3"></textarea></label>
+      <details class="bill full"><summary>¿Necesitas factura a nombre de una empresa?</summary>
+        <div class="form-grid">
+          <label class="full">Nombre o razón social<input name="bill_name" autocomplete="organization"></label>
+          <label>NIF / CIF<input name="bill_nif"></label>
+          <label>Dirección fiscal<input name="bill_address" autocomplete="street-address"></label>
+        </div>
+      </details>
       <input name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
       <label class="check full"><input type="checkbox" name="accept" required> <span>Acepto la política de cancelación y las normas de la casa.</span></label>
     </div>

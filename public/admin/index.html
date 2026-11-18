@@ -230,14 +230,26 @@
           <label>Instagram<input name="instagram" placeholder="@terracotasuites"></label>
           <label>Nº registro turístico<input name="license"></label>
           <label>Mostrar «Superanfitriones»<select name="superhost"><option value="1">Sí</option><option value="0">No</option></select></label>
-          <label class="span2">Titular (nombre legal)<input name="legal_name"></label>
-          <label class="span2">NIF<input name="legal_id"></label>
         </div>
       </form>
     </section>
     <!-- PAGOS -->
     <section data-view="pagos" class="view" hidden>
       <div class="card" id="stripeCard"></div>
+      <div class="card" id="mailCard"></div>
+      <form class="card" id="billingForm">
+        <div class="card-h"><h2>Datos de facturación</h2><button class="btn primary">Guardar</button></div>
+        <p class="hint" style="margin:0 0 14px">Con estos datos cada reserva confirmada recibe su factura con número correlativo (se puede descargar en PDF desde el email del huésped y desde el panel).</p>
+        <div class="fgrid">
+          <label class="span2">Titular (nombre y apellidos o razón social)<input name="legal_name" placeholder="Javier Ibáñez …"></label>
+          <label>NIF<input name="legal_id"></label>
+          <label>Serie de las facturas<input name="invoice_prefix" placeholder="F" maxlength="6"><small class="muted">Saldrán como F2026-0001, F2026-0002…</small></label>
+          <label class="span4">Dirección fiscal<input name="fiscal_address" placeholder="Calle, número, CP, municipio, provincia"></label>
+          <label class="span2">IVA<select name="vat_rate"><option value="">— Elige (sin esto no se emiten facturas) —</option><option value="0">Exento de IVA</option><option value="10">10 % incluido en el precio</option><option value="21">21 % incluido en el precio</option></select></label>
+          <label class="span2">Texto de la exención (si es exento)<input name="vat_note" placeholder="Operación exenta de IVA según art. 20.Uno.23º Ley 37/1992"></label>
+        </div>
+        <p class="hint">Consulta con tu gestor qué IVA te corresponde. Los precios de la web no cambian: el IVA se calcula <b>dentro</b> del total.</p>
+      </form>
       <form class="card" id="pwForm">
         <div class="card-h"><h2>Cambiar contraseña del panel</h2><button class="btn primary">Cambiar</button></div>
         <div class="fgrid">

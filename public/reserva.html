@@ -35,7 +35,7 @@ async function load(){
   else if(r.status==='pending'&&r.mode==='request') head=`<div class="icon wait">✉</div><p class="eyebrow">Solicitud recibida</p><h1 class="display small">Gracias${r.name?', '+esc(r.name):''}</h1><p class="muted">Hemos bloqueado las fechas y te contactaremos en breve para confirmar la reserva y el pago.</p>`;
   else if(r.status==='pending') head=`<div class="icon wait">!</div><p class="eyebrow">Pago pendiente</p><h1 class="display small">Tu reserva aún no está pagada</h1><p class="muted">${p.get('pago')==='cancelado'?'Has cancelado el pago. ':''}Las fechas quedan guardadas unos minutos; si quieres, vuelve a la web y reserva de nuevo.</p>`;
   else head=`<div class="icon ko">×</div><p class="eyebrow">Reserva no completada</p><h1 class="display small">${r.status==='cancelled'?'Reserva cancelada':'El tiempo para pagar ha caducado'}</h1><p class="muted">No se ha realizado ningún cargo. Puedes volver a intentarlo cuando quieras.</p>`;
-  $('#card').innerHTML=head+`<div class="ref">${esc(r.ref)}</div>`+info+`<a class="btn btn-ghost" href="/">Volver a la web</a>`;
+  $('#card').innerHTML=head+`<div class="ref">${esc(r.ref)}</div>`+info+(r.invoice?`<a class="btn btn-terra" href="${esc(r.invoice)}" target="_blank" rel="noopener" style="margin:0 6px 10px">Descargar factura</a>`:'')+`<a class="btn btn-ghost" href="/">Volver a la web</a>`;
 }
 load();
 </script></body></html>

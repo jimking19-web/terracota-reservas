@@ -272,3 +272,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--t
 .switch input:checked + span { background: var(--terra, #b5582e); }
 .switch input:checked + span::after { transform: translateX(18px); }
 .switch input:focus-visible + span { outline: 2px solid var(--terra, #b5582e); outline-offset: 2px; }
+
+/* Datos de factura (opcional) */
+.bill { border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; background: var(--cream); }
+.bill summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.bill[open] summary { margin-bottom: 10px; }

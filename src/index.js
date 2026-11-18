@@ -3,7 +3,8 @@ import { addDays, diffDays, isDate, todayMadrid } from './dates.js';
 import { calendar, getUnit, loadContext, night, quote, money } from './pricing.js';
 import { exportIcal, syncAll, syncFeed } from './ical.js';
 import { createCheckout, verifyWebhook } from './stripe.js';
-import { bookingEmail, sendMail } from './mail.js';
+import { guestEmail, ownerEmail, sendMail, mailEnabled } from './mail.js';
+import { ensureInvoice, invoiceReady, invoiceUrl, serveInvoice } from './invoice.js';
 
 const HOLD_MINUTES = 31;          // Stripe exige mínimo 30 min de validez en Checkout
 const REQUEST_HOLD_HOURS = 48;    // si no hay Stripe: la solicitud bloquea 48 h hasta que la confirmes
@@ -23,7 +24,7 @@ export const DEFAULT_SETTINGS = {
   house_rules: 'No se permite fumar en el interior\nNo se admiten fiestas ni eventos\nRespeta el descanso de los vecinos a partir de las 23:00',
   cancellation: 'Cancelación gratuita hasta 14 días antes de la llegada. Después, no reembolsable.',
   license: '',
-  legal_name: '', legal_id: '',
+  legal_name: '', legal_id: '', fiscal_address: '', vat_rate: '', vat_note: '', invoice_prefix: 'F',
   superhost: '1',
   hero_photo: '',
 };
@@ -42,7 +43,7 @@ function makeRef() {
 const sqlNow = (offsetMs = 0) => new Date(Date.now() + offsetMs).toISOString().replace('T', ' ').slice(0, 19);
 
 // Claves guardadas en D1 que NUNCA se envían al navegador
-const SECRET_KEYS = ['admin_hash', 'setup_code', 'stripe_secret_key', 'stripe_webhook_secret', 'stripe_webhook_id', 'stripe_account'];
+const SECRET_KEYS = ['admin_hash', 'setup_code', 'stripe_secret_key', 'stripe_webhook_secret', 'stripe_webhook_id', 'stripe_account', 'smtp_user', 'smtp_pass', 'link_secret'];
 
 async function getSettings(db, withSecrets = false) {
   const rows = (await db.prepare('SELECT key, value FROM settings').all()).results;
@@ -65,6 +66,7 @@ async function withConfig(env) {
     STRIPE_WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET || c.stripe_webhook_secret || '',
     ADMIN_HASH: c.admin_hash || '', SETUP_CODE: c.setup_code || '', STRIPE_ACCOUNT: c.stripe_account || '',
     STRIPE_FROM_PANEL: !env.STRIPE_SECRET_KEY && !!c.stripe_secret_key,
+    SMTP_USER: c.smtp_user || '', SMTP_PASS: c.smtp_pass || '',
   };
 }
 
@@ -105,24 +107,45 @@ async function safeEqual(a, b) {
 }
 
 // ---------- confirmación de reservas ----------
-async function confirmBooking(env, booking, paymentId) {
+async function confirmBooking(env, booking, paymentId, origin) {
   const db = env.DB;
+  // Solo la primera confirmación sigue (evita emails dobles si webhook y página llegan a la vez)
+  const upd = await db.prepare("UPDATE bookings SET status = 'confirmed', paid = 1, stripe_payment = ?, expires_at = NULL WHERE id = ? AND status != 'confirmed'")
+    .bind(paymentId || booking.stripe_payment, booking.id).run();
+  if (!upd.meta.changes) return;
   const unit = await getUnit(db, booking.unit_id);
   // ¿Se ha solapado mientras pagaba? (p. ej. llegó una reserva por iCal)
   const ctx = await loadContext(db, unit, booking.checkin, booking.checkout, { excludeBookingId: booking.id });
   const conflict = [];
   for (let d = booking.checkin; d < booking.checkout; d = addDays(d, 1)) if (!night(ctx, d).free) conflict.push(d);
-  const note = conflict.length ? `⚠️ CONFLICTO: noches ocupadas por otra reserva/bloqueo (${conflict.join(', ')}). Revisar.` : booking.internal_note;
-  await db.prepare("UPDATE bookings SET status = 'confirmed', paid = 1, stripe_payment = ?, internal_note = ?, expires_at = NULL WHERE id = ?")
-    .bind(paymentId || booking.stripe_payment, note, booking.id).run();
+  if (conflict.length) await db.prepare('UPDATE bookings SET internal_note = ? WHERE id = ?').bind(`⚠️ CONFLICTO: noches ocupadas por otra reserva/bloqueo (${conflict.join(', ')}). Revisar.`, booking.id).run();
   if (booking.promo_code) await db.prepare('UPDATE promo_codes SET uses = uses + 1 WHERE upper(code) = upper(?)').bind(booking.promo_code).run();
+  await notifyConfirmed(env, booking.id, origin, { owner: true, conflict: conflict.length ? `Noches ocupadas por otra reserva o bloqueo: ${conflict.join(', ')}. Revísalo.` : '' });
+}
+
+// Envía el email de confirmación al huésped (y opcionalmente el aviso al propietario). Asigna factura si procede.
+async function notifyConfirmed(env, bookingId, origin, { owner = false, guest = true, conflict = '' } = {}) {
+  const db = env.DB;
   const site = await getSettings(db);
-  const b = { ...booking, status: 'confirmed' };
+  origin = origin || site.site_url || '';
+  let b = await db.prepare('SELECT * FROM bookings WHERE id = ?').bind(bookingId).first();
+  if (!b) return { ok: false, error: 'Reserva no encontrada' };
+  const unit = await getUnit(db, b.unit_id);
+  b = await ensureInvoice(db, b, site);
+  const inv = b.invoice_no ? await invoiceUrl(db, origin, b.ref) : '';
+  const hero = site.hero_photo ? `${origin}/foto/${site.hero_photo}` : '';
   const ownerMail = env.OWNER_EMAIL || site.email;
-  await Promise.all([
-    sendMail(env, { to: b.email, subject: `Reserva confirmada · ${site.site_name} · ${b.ref}`, html: bookingEmail(site, unit, b), replyTo: ownerMail || undefined }),
-    sendMail(env, { to: ownerMail, subject: `${conflict.length ? '⚠️ ' : ''}Nueva reserva ${b.ref} · ${b.checkin} → ${b.checkout} · ${money(b.total)}`, html: bookingEmail(site, unit, b, true), replyTo: b.email }),
-  ]).catch(() => {});
+  const jobs = [];
+  if (guest && b.email) jobs.push(sendMail(env, { to: b.email, fromName: site.site_name, replyTo: ownerMail || undefined,
+    subject: `Reserva confirmada · ${site.site_name} · ${b.ref}`,
+    html: guestEmail(site, unit, b, { origin, heroUrl: hero, bookingUrl: `${origin}/reserva?ref=${b.ref}`, invoiceUrl: inv }) }));
+  if (owner && ownerMail) jobs.push(sendMail(env, { to: ownerMail, fromName: site.site_name, replyTo: b.email,
+    subject: `${conflict ? '⚠️ ' : ''}Nueva reserva ${b.ref} · ${b.checkin} → ${b.checkout} · ${money(b.total)}`,
+    html: ownerEmail(site, unit, b, { origin, invoiceUrl: inv, conflict }) }));
+  const res = await Promise.all(jobs);
+  const err = res.find(r => r && r.ok === false);
+  if (guest && b.email && res[0]?.ok) await db.prepare("UPDATE bookings SET mail_sent_at = datetime('now') WHERE id = ?").bind(b.id).run();
+  return err ? { ok: false, error: err.error } : { ok: true, skipped: res.every(r => r?.skipped) };
 }
 
 // ---------- API pública ----------
@@ -176,10 +199,11 @@ async function publicApi(req, env, url, path) {
       ref: makeRef(), unit_id: unit.id, checkin: q.checkin, checkout: q.checkout, nights: q.nights, guests: q.guests,
       name: name.slice(0, 120), email: email.slice(0, 160), phone: phone.slice(0, 40), country: String(b.country || '').slice(0, 60),
       notes: String(b.notes || '').slice(0, 1000), total: q.total, breakdown: JSON.stringify(q.lines), promo_code: q.promo,
+      billing: b.bill_name || b.bill_nif ? JSON.stringify({ name: String(b.bill_name || '').slice(0, 120), nif: String(b.bill_nif || '').slice(0, 30), address: String(b.bill_address || '').slice(0, 240) }) : null,
     };
-    const ins = await db.prepare(`INSERT INTO bookings (ref, unit_id, checkin, checkout, nights, guests, name, email, phone, country, notes, total, breakdown, promo_code, status, source, expires_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', 'web', ?)`).bind(booking.ref, booking.unit_id, booking.checkin, booking.checkout, booking.nights, booking.guests,
-      booking.name, booking.email, booking.phone, booking.country, booking.notes, booking.total, booking.breakdown, booking.promo_code, sqlNow(expiresMs - Date.now())).run();
+    const ins = await db.prepare(`INSERT INTO bookings (ref, unit_id, checkin, checkout, nights, guests, name, email, phone, country, notes, total, breakdown, promo_code, billing, status, source, expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', 'web', ?)`).bind(booking.ref, booking.unit_id, booking.checkin, booking.checkout, booking.nights, booking.guests,
+      booking.name, booking.email, booking.phone, booking.country, booking.notes, booking.total, booking.breakdown, booking.promo_code, booking.billing, sqlNow(expiresMs - Date.now())).run();
     booking.id = ins.meta.last_row_id;
 
     // Doble comprobación contra carreras: si otra reserva entró a la vez, anulamos esta
@@ -196,7 +220,11 @@ async function publicApi(req, env, url, path) {
 
     if (!usingStripe) {
       const site = await getSettings(db);
-      await sendMail(env, { to: env.OWNER_EMAIL || site.email, subject: `Solicitud de reserva ${booking.ref} · ${booking.checkin} → ${booking.checkout}`, html: bookingEmail(site, unit, booking, true), replyTo: booking.email }).catch(() => {});
+      const o = url.origin;
+      await Promise.all([
+        sendMail(env, { to: env.OWNER_EMAIL || site.email, fromName: site.site_name, subject: `Solicitud de reserva ${booking.ref} · ${booking.checkin} → ${booking.checkout}`, html: ownerEmail(site, unit, { ...booking, status: 'pending' }, { origin: o }), replyTo: booking.email }),
+        sendMail(env, { to: booking.email, fromName: site.site_name, subject: `Solicitud recibida · ${site.site_name} · ${booking.ref}`, html: guestEmail(site, unit, booking, { origin: o, kind: 'request', heroUrl: site.hero_photo ? `${o}/foto/${site.hero_photo}` : '', bookingUrl: `${o}/reserva?ref=${booking.ref}` }), replyTo: site.email || undefined }),
+      ]);
       return json({ ok: true, ref: booking.ref, mode: 'request', redirect: `/reserva?ref=${booking.ref}` });
     }
     try {
@@ -219,13 +247,14 @@ async function publicApi(req, env, url, path) {
       try {
         const r = await fetch(`https://api.stripe.com/v1/checkout/sessions/${b.stripe_session}`, { headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` } });
         const s = await r.json();
-        if (s.payment_status === 'paid') { await confirmBooking(env, b, s.payment_intent); b.status = 'confirmed'; }
+        if (s.payment_status === 'paid') { await confirmBooking(env, b, s.payment_intent, url.origin); b.status = 'confirmed'; }
       } catch {}
     }
     const isExpired = b.status === 'pending' && b.expires_at && b.expires_at < sqlNow();
     return json({ ok: true, ref: b.ref, unit: b.unit_name, checkin: b.checkin, checkout: b.checkout, nights: b.nights, guests: b.guests,
       name: (b.name || '').split(' ')[0], total: b.total, lines: JSON.parse(b.breakdown || '[]'),
-      status: isExpired ? 'expired' : b.status, mode: b.stripe_session ? 'stripe' : 'request' });
+      status: isExpired ? 'expired' : b.status, mode: b.stripe_session ? 'stripe' : 'request',
+      invoice: b.status === 'confirmed' && invoiceReady(await getSettings(db)) ? await invoiceUrl(db, url.origin, b.ref) : null });
   }
 
   if (path === '/api/stripe/webhook' && req.method === 'POST') {
@@ -238,7 +267,7 @@ async function publicApi(req, env, url, path) {
       const b = await db.prepare('SELECT * FROM bookings WHERE ref = ?').bind(ref).first();
       if (b) {
         if ((evt.type === 'checkout.session.completed' || evt.type === 'checkout.session.async_payment_succeeded') && s.payment_status === 'paid' && b.status !== 'confirmed') {
-          await confirmBooking(env, b, s.payment_intent);
+          await confirmBooking(env, b, s.payment_intent, url.origin);
         } else if ((evt.type === 'checkout.session.expired' || evt.type === 'checkout.session.async_payment_failed') && b.status === 'pending') {
           await db.prepare("UPDATE bookings SET status = 'expired' WHERE id = ?").bind(b.id).run();
         }
@@ -332,7 +361,43 @@ async function adminApi(req, env, url, path) {
     return json({ ok: true });
   }
 
+  // Emails (Gmail con contraseña de aplicación)
+  if (path === '/api/admin/mail' && req.method === 'POST') {
+    const user = String(b.user || '').trim().toLowerCase(), pass = String(b.pass || '').replace(/\s+/g, '');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(user)) return bad('Email no válido');
+    if (pass.length < 8) return bad('Pega la contraseña de aplicación de 16 letras');
+    const site = await getSettings(db);
+    const test = await sendMail({ ...env, SMTP_USER: user, SMTP_PASS: pass }, { to: user, fromName: site.site_name, subject: `✓ Emails activados · ${site.site_name}`,
+      html: `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#2a211c"><p>¡Listo! Tu web de reservas ya puede enviar emails desde <b>${user}</b>.</p><p>A partir de ahora cada huésped recibirá su confirmación con el resumen y la factura, y tú un aviso de cada reserva.</p></div>` });
+    if (!test.ok) return bad('No he podido enviar con esos datos: ' + (test.error || 'error desconocido').replace(/^SMTP 535.*$/, 'Google rechaza el usuario o la contraseña de aplicación (535). Revisa que sea una contraseña de aplicación, no tu contraseña normal.'));
+    await setSetting(db, 'smtp_user', user); await setSetting(db, 'smtp_pass', pass);
+    return json({ ok: true });
+  }
+  if (path === '/api/admin/mail' && req.method === 'DELETE') {
+    await setSetting(db, 'smtp_user', null); await setSetting(db, 'smtp_pass', null);
+    return json({ ok: true });
+  }
+  if ((m = path.match(/^\/api\/admin\/bookings\/(\d+)\/email$/)) && req.method === 'POST') {
+    if (!mailEnabled(env)) return bad('Primero activa los emails en «Pagos y cuenta»');
+    const bk = await db.prepare('SELECT status, email FROM bookings WHERE id = ?').bind(Number(m[1])).first();
+    if (!bk) return bad('No encontrada', 404);
+    if (bk.status !== 'confirmed') return bad('Solo se envía la confirmación de reservas confirmadas');
+    if (!bk.email) return bad('La reserva no tiene email');
+    const r = await notifyConfirmed(env, Number(m[1]), url.origin);
+    return r.ok ? json({ ok: true }) : bad('No se pudo enviar: ' + r.error);
+  }
+  if ((m = path.match(/^\/api\/admin\/bookings\/(\d+)\/invoice$/)) && req.method === 'POST') {
+    const site = await getSettings(db);
+    if (!invoiceReady(site)) return bad('Completa primero los datos de facturación en «Pagos y cuenta»');
+    let bk = await db.prepare('SELECT * FROM bookings WHERE id = ?').bind(Number(m[1])).first();
+    if (!bk || bk.status !== 'confirmed') return bad('Solo las reservas confirmadas tienen factura');
+    bk = await ensureInvoice(db, bk, site);
+    if (!bk.invoice_no) return bad('Esta reserva no tiene importe que facturar');
+    return json({ ok: true, url: await invoiceUrl(db, url.origin, bk.ref), number: bk.invoice_no });
+  }
+
   if (path === '/api/admin/state' && req.method === 'GET') {
+    if (!/localhost|127\.0\.0\.1/.test(url.host)) await setSetting(db, 'site_url', url.origin);
     const [units, seasons, promos, feeds, photos, settings, pendingCount, extras] = await Promise.all([
       db.prepare('SELECT * FROM units ORDER BY sort, id').all(),
       db.prepare('SELECT * FROM seasons ORDER BY start_date').all(),
@@ -345,7 +410,7 @@ async function adminApi(req, env, url, path) {
     ]);
     return json({ ok: true, extras: extras.results, units: units.results, seasons: seasons.results, promos: promos.results, feeds: feeds.results, photos: photos.results, settings,
       today: todayMadrid(), origin: url.origin, stripe: !!env.STRIPE_SECRET_KEY, stripeMode: (env.STRIPE_SECRET_KEY || '').startsWith('sk_live') ? 'live' : (env.STRIPE_SECRET_KEY ? 'test' : 'off'),
-      webhook: !!env.STRIPE_WEBHOOK_SECRET, mail: !!env.RESEND_API_KEY, pending: pendingCount.n,
+      webhook: !!env.STRIPE_WEBHOOK_SECRET, mail: mailEnabled(env), mailUser: env.SMTP_USER || (env.RESEND_API_KEY ? 'Resend' : ''), invoices: invoiceReady(settings), pending: pendingCount.n,
       stripeAccount: env.STRIPE_ACCOUNT, stripeFromPanel: env.STRIPE_FROM_PANEL, passwordInCloudflare: !!env.ADMIN_PASSWORD });
   }
 
@@ -434,6 +499,10 @@ async function adminApi(req, env, url, path) {
     }
     if (!sets.length) return json({ ok: true });
     await db.prepare(`UPDATE bookings SET ${sets.join(', ')} WHERE id = ?`).bind(...args, id).run();
+    if (b.status === 'confirmed' && cur.status !== 'confirmed' && b.notify && cur.email && cur.source !== 'bloqueo' && mailEnabled(env)) {
+      const r = await notifyConfirmed(env, id, url.origin);
+      return json({ ok: true, mailed: !!r.ok, mailError: r.ok ? undefined : r.error });
+    }
     return json({ ok: true });
   }
 
@@ -612,6 +681,9 @@ export default {
         if (!p) return new Response('No encontrada', { status: 404 });
         if (p.src) return env.ASSETS.fetch(new Request(new URL(p.src, url), req));
         return new Response(new Uint8Array(p.data), { headers: { 'Content-Type': p.mime, 'Cache-Control': 'public, max-age=31536000, immutable' } });
+      }
+      if ((m = path.match(/^\/factura\/(TS-[A-Z0-9]{6})$/))) {
+        return serveInvoice(env, m[1], url.searchParams.get('t'), url.origin, await getSettings(env.DB));
       }
       if ((m = path.match(/^\/ical\/([a-f0-9]{16,64})\.ics$/))) {
         const unit = await env.DB.prepare('SELECT * FROM units WHERE ical_token = ?').bind(m[1]).first();

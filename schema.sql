@@ -96,6 +96,10 @@ CREATE TABLE IF NOT EXISTS bookings (
   stripe_payment TEXT,
   paid INTEGER NOT NULL DEFAULT 0,
   internal_note TEXT,
+  billing TEXT,                           -- datos de factura opcionales {name, nif, address}
+  invoice_no TEXT,                        -- nº de factura (se asigna al confirmar)
+  invoice_date TEXT,
+  mail_sent_at TEXT,                      -- último email de confirmación enviado al huésped
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT
 );
