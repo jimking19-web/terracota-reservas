@@ -300,3 +300,6 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--t
   .wa-float { right: 14px; bottom: calc(80px + env(safe-area-inset-bottom)); padding: 13px; }
   .wa-float span { display: none; }
 }
+.street { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 700; margin: -6px 0 14px; color: var(--ink); }
+.street svg { color: var(--terra); }
+.street a { color: var(--terra); }

@@ -69,7 +69,9 @@ function fillSettings(s) {
   const legal = [s.license && `Nº registro turístico: ${s.license}`, s.legal_name, s.legal_id].filter(Boolean);
   $('#legal').textContent = legal.join(' · ');
   $('#year').textContent = new Date().getFullYear();
-  $('#map').innerHTML = `<iframe loading="lazy" title="Mapa" src="https://www.google.com/maps?q=${encodeURIComponent(s.map_query || s.address)}&z=13&output=embed"></iframe>`;
+  const mapQ = s.street ? `${s.street}, ${s.map_query || s.address}` : (s.map_query || s.address);
+  $('#map').innerHTML = `<iframe loading="lazy" title="Mapa" src="https://www.google.com/maps?q=${encodeURIComponent(mapQ)}&z=${s.street ? 16 : 13}&output=embed"></iframe>`;
+  if (s.street) { $('#street').hidden = false; $('#streetText').textContent = s.street; $('#directions').href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(mapQ)}`; }
 }
 
 const PHOTO_CATS = [['salon', 'Salón'], ['cocina', 'Cocina'], ['dormitorio', 'Dormitorio'], ['bano', 'Baño'], ['exterior', 'Alberca y patio']];
