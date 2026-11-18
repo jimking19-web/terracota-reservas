@@ -43,13 +43,71 @@ function daysPick(el, values) {
 }
 const daysValue = el => $$(`[data-name="${el.dataset.name}"] button.on`).filter(b => el.contains(b)).map(b => Number(b.dataset.d));
 
-// ---------- login ----------
-function showLogin() { $('#app').hidden = true; $('#login').hidden = false; $('#pw').focus(); }
+// ---------- login / primera activación ----------
+let setupMode = false;
+async function showLogin() {
+  $('#app').hidden = true; $('#login').hidden = false;
+  const st = await fetch('/api/admin/status').then(r => r.json()).catch(() => ({}));
+  setupMode = !!st.setup;
+  $('#setupBox').hidden = $('#pw2Box').hidden = !setupMode;
+  $('#pwLabel').textContent = setupMode ? 'Nueva contraseña (mínimo 8 caracteres)' : 'Contraseña';
+  $('#pw').autocomplete = setupMode ? 'new-password' : 'current-password';
+  $('#loginForm .btn').textContent = setupMode ? 'Crear contraseña y entrar' : 'Entrar';
+  const code = new URLSearchParams(location.search).get('codigo');
+  if (code) $('#setupCode').value = code;
+  (setupMode && !code ? $('#setupCode') : $('#pw')).focus();
+}
 $('#loginForm').onsubmit = async e => {
   e.preventDefault();
-  const r = await api('/api/admin/login', 'POST', { password: $('#pw').value });
+  let r;
+  if (setupMode) {
+    if ($('#pw').value.length < 8) return ($('#loginErr').textContent = 'Mínimo 8 caracteres');
+    if ($('#pw').value !== $('#pw2').value) return ($('#loginErr').textContent = 'Las contraseñas no coinciden');
+    r = await api('/api/admin/setup', 'POST', { code: $('#setupCode').value, password: $('#pw').value });
+  } else r = await api('/api/admin/login', 'POST', { password: $('#pw').value });
   if (!r.ok) { $('#loginErr').textContent = r.error; return; }
-  $('#login').hidden = true; boot();
+  history.replaceState(null, '', '/admin/' + location.hash);
+  $('#login').hidden = true; // ---------- PAGOS ----------
+function renderPagos() {
+  const c = $('#stripeCard');
+  if (S.stripe) {
+    c.innerHTML = `<div class="card-h"><h2>Pagos con tarjeta (Stripe)</h2></div>
+      <div class="stripe-ok">✓ Conectado${S.stripeAccount ? ' a ' + esc(S.stripeAccount) : ''} · ${S.stripeMode === 'live' ? 'MODO REAL: se cobra de verdad' : 'modo de prueba'}</div>
+      ${S.stripeMode === 'test' ? '<p class="hint">Haz una reserva de prueba en tu web con la tarjeta <b>4242 4242 4242 4242</b>, caducidad cualquiera futura y CVC cualquiera. Cuando funcione, conecta la clave real (sk_live_…) para empezar a cobrar.</p>' : ''}
+      ${S.stripeFromPanel ? `<div class="row-btns"><button class="btn" id="stripeChange">${S.stripeMode === 'test' ? 'Pasar a modo real (clave live)' : 'Cambiar clave'}</button><button class="btn danger-ghost" id="stripeOff">Desconectar</button></div>` : '<p class="hint">Configurado desde Cloudflare.</p>'}
+      <div id="stripeFormBox"></div>`;
+    $('#stripeChange') && ($('#stripeChange').onclick = () => stripeForm(S.stripeMode === 'test' ? 'live' : S.stripeMode));
+    $('#stripeOff') && ($('#stripeOff').onclick = async () => { if (confirm('¿Desconectar Stripe? Las reservas pasarán a ser solicitudes sin pago.') && await act(api('/api/admin/stripe', 'DELETE'), 'Stripe desconectado')) { await refresh(); renderPagos(); } });
+  } else {
+    c.innerHTML = `<div class="card-h"><h2>Pagos con tarjeta (Stripe)</h2></div><div id="stripeFormBox"></div>`;
+    stripeForm('test');
+  }
+  $('#pwForm').hidden = S.passwordInCloudflare;
+}
+function stripeForm(mode) {
+  const live = mode === 'live';
+  $('#stripeFormBox').innerHTML = `<ol class="steps">
+      <li>Abre <a href="https://dashboard.stripe.com/${live ? '' : 'test/'}apikeys" target="_blank" rel="noopener">tus claves de Stripe${live ? '' : ' (modo de prueba)'}</a> e inicia sesión.</li>
+      <li>En <b>Clave secreta</b> pulsa <b>Revelar</b> y cópiala (empieza por <b>${live ? 'sk_live_' : 'sk_test_'}</b>).</li>
+      <li>Pégala aquí abajo y pulsa <b>Conectar</b>. Yo configuro el resto (el aviso de pagos se crea solo).</li>
+    </ol>
+    <div class="copy"><input id="stripeKey" placeholder="${live ? 'sk_live_…' : 'sk_test_…'}" autocomplete="off" spellcheck="false"><button class="btn primary" id="stripeGo">Conectar</button></div>`;
+  $('#stripeGo').onclick = async () => {
+    const btn = $('#stripeGo'); btn.disabled = true; btn.textContent = 'Conectando…';
+    const r = await api('/api/admin/stripe', 'POST', { key: $('#stripeKey').value });
+    btn.disabled = false; btn.textContent = 'Conectar';
+    if (!r.ok) return toast(r.error, true);
+    toast(`Stripe conectado (${r.mode === 'live' ? 'modo real' : 'modo prueba'})`); await refresh(); renderPagos();
+  };
+}
+$('#pwForm').onsubmit = async e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(e.target).entries());
+  if (d.password !== d.password2) return toast('Las contraseñas nuevas no coinciden', true);
+  if (await act(api('/api/admin/password', 'POST', d), 'Contraseña cambiada')) e.target.reset();
+};
+
+boot();
 };
 $('#logout').onclick = async () => { await api('/api/admin/logout', 'POST'); location.reload(); };
 
@@ -62,7 +120,7 @@ function go(tab) {
   $('#title').textContent = $(`#tabs [data-tab="${tab}"]`).textContent.replace(/\d+$/, '').trim().replace(/^[^\wÁÉÍÓÚáéíóú]+/, '');
   $('.side').classList.remove('open');
   history.replaceState(null, '', '#' + tab);
-  ({ inicio: renderHome, calendario: renderCal, reservas: loadBookings, tarifas: renderTarifas, codigos: renderPromos, sincro: renderSync, web: renderWeb })[tab]?.();
+  ({ inicio: renderHome, calendario: renderCal, reservas: loadBookings, tarifas: renderTarifas, codigos: renderPromos, sincro: renderSync, web: renderWeb, pagos: renderPagos })[tab]?.();
 }
 $('#tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); };
 document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) go(g.dataset.goto); });
@@ -88,7 +146,7 @@ async function boot() {
 // ---------- INICIO ----------
 async function renderHome() {
   const w = [];
-  if (!S.stripe) w.push('<div class="warn">Stripe no está configurado: las reservas llegan como <b>solicitudes</b> sin pago. Añade STRIPE_SECRET_KEY en Cloudflare para cobrar con tarjeta.</div>');
+  if (!S.stripe) w.push('<div class="warn">Stripe no está conectado: las reservas llegan como <b>solicitudes</b> sin pago. <button class="linkbtn" data-goto="pagos">Conectar Stripe</button></div>');
   else if (!S.webhook) w.push('<div class="warn">Falta STRIPE_WEBHOOK_SECRET: los pagos se confirman al volver el cliente a la web, pero conviene configurar el webhook.</div>');
   else if (S.stripeMode === 'test') w.push('<div class="warn">Stripe está en <b>modo de prueba</b>. Cambia a las claves «live» para cobrar de verdad.</div>');
   if (!S.mail) w.push('<div class="warn">Los emails de confirmación están desactivados (falta RESEND_API_KEY). Las reservas se ven aquí igualmente.</div>');
@@ -492,6 +550,46 @@ $('#addUnit').onclick = async () => {
   const name = prompt('Nombre de la nueva suite', 'Suite 2'); if (!name) return;
   const r = await act(api('/api/admin/units', 'POST', { name, base_price: toEuros(unit().base_price) }), 'Suite creada');
   if (r) { unitId = r.id; localStorage.setItem('ts_unit', unitId); await refresh(); go('tarifas'); }
+};
+
+// ---------- PAGOS ----------
+function renderPagos() {
+  const c = $('#stripeCard');
+  if (S.stripe) {
+    c.innerHTML = `<div class="card-h"><h2>Pagos con tarjeta (Stripe)</h2></div>
+      <div class="stripe-ok">✓ Conectado${S.stripeAccount ? ' a ' + esc(S.stripeAccount) : ''} · ${S.stripeMode === 'live' ? 'MODO REAL: se cobra de verdad' : 'modo de prueba'}</div>
+      ${S.stripeMode === 'test' ? '<p class="hint">Haz una reserva de prueba en tu web con la tarjeta <b>4242 4242 4242 4242</b>, caducidad cualquiera futura y CVC cualquiera. Cuando funcione, conecta la clave real (sk_live_…) para empezar a cobrar.</p>' : ''}
+      ${S.stripeFromPanel ? `<div class="row-btns"><button class="btn" id="stripeChange">${S.stripeMode === 'test' ? 'Pasar a modo real (clave live)' : 'Cambiar clave'}</button><button class="btn danger-ghost" id="stripeOff">Desconectar</button></div>` : '<p class="hint">Configurado desde Cloudflare.</p>'}
+      <div id="stripeFormBox"></div>`;
+    $('#stripeChange') && ($('#stripeChange').onclick = () => stripeForm(S.stripeMode === 'test' ? 'live' : S.stripeMode));
+    $('#stripeOff') && ($('#stripeOff').onclick = async () => { if (confirm('¿Desconectar Stripe? Las reservas pasarán a ser solicitudes sin pago.') && await act(api('/api/admin/stripe', 'DELETE'), 'Stripe desconectado')) { await refresh(); renderPagos(); } });
+  } else {
+    c.innerHTML = `<div class="card-h"><h2>Pagos con tarjeta (Stripe)</h2></div><div id="stripeFormBox"></div>`;
+    stripeForm('test');
+  }
+  $('#pwForm').hidden = S.passwordInCloudflare;
+}
+function stripeForm(mode) {
+  const live = mode === 'live';
+  $('#stripeFormBox').innerHTML = `<ol class="steps">
+      <li>Abre <a href="https://dashboard.stripe.com/${live ? '' : 'test/'}apikeys" target="_blank" rel="noopener">tus claves de Stripe${live ? '' : ' (modo de prueba)'}</a> e inicia sesión.</li>
+      <li>En <b>Clave secreta</b> pulsa <b>Revelar</b> y cópiala (empieza por <b>${live ? 'sk_live_' : 'sk_test_'}</b>).</li>
+      <li>Pégala aquí abajo y pulsa <b>Conectar</b>. Yo configuro el resto (el aviso de pagos se crea solo).</li>
+    </ol>
+    <div class="copy"><input id="stripeKey" placeholder="${live ? 'sk_live_…' : 'sk_test_…'}" autocomplete="off" spellcheck="false"><button class="btn primary" id="stripeGo">Conectar</button></div>`;
+  $('#stripeGo').onclick = async () => {
+    const btn = $('#stripeGo'); btn.disabled = true; btn.textContent = 'Conectando…';
+    const r = await api('/api/admin/stripe', 'POST', { key: $('#stripeKey').value });
+    btn.disabled = false; btn.textContent = 'Conectar';
+    if (!r.ok) return toast(r.error, true);
+    toast(`Stripe conectado (${r.mode === 'live' ? 'modo real' : 'modo prueba'})`); await refresh(); renderPagos();
+  };
+}
+$('#pwForm').onsubmit = async e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(e.target).entries());
+  if (d.password !== d.password2) return toast('Las contraseñas nuevas no coinciden', true);
+  if (await act(api('/api/admin/password', 'POST', d), 'Contraseña cambiada')) e.target.reset();
 };
 
 boot();

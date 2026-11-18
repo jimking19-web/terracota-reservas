@@ -41,11 +41,45 @@ function makeRef() {
 }
 const sqlNow = (offsetMs = 0) => new Date(Date.now() + offsetMs).toISOString().replace('T', ' ').slice(0, 19);
 
-async function getSettings(db) {
+// Claves guardadas en D1 que NUNCA se envían al navegador
+const SECRET_KEYS = ['admin_hash', 'setup_code', 'stripe_secret_key', 'stripe_webhook_secret', 'stripe_webhook_id', 'stripe_account'];
+
+async function getSettings(db, withSecrets = false) {
   const rows = (await db.prepare('SELECT key, value FROM settings').all()).results;
   const s = { ...DEFAULT_SETTINGS };
-  for (const r of rows) s[r.key] = r.value;
+  for (const r of rows) if (withSecrets || !SECRET_KEYS.includes(r.key)) s[r.key] = r.value;
   return s;
+}
+async function setSetting(db, key, value) {
+  if (value == null) return db.prepare('DELETE FROM settings WHERE key = ?').bind(key).run();
+  return db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, String(value)).run();
+}
+
+// Mezcla los secretos de Cloudflare con los configurados desde el panel (Cloudflare tiene prioridad)
+async function withConfig(env) {
+  const rows = (await env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SECRET_KEYS.map(() => '?').join(',')})`).bind(...SECRET_KEYS).all()).results;
+  const c = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  return {
+    ...env,
+    STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY || c.stripe_secret_key || '',
+    STRIPE_WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET || c.stripe_webhook_secret || '',
+    ADMIN_HASH: c.admin_hash || '', SETUP_CODE: c.setup_code || '', STRIPE_ACCOUNT: c.stripe_account || '',
+    STRIPE_FROM_PANEL: !env.STRIPE_SECRET_KEY && !!c.stripe_secret_key,
+  };
+}
+
+// Contraseña con PBKDF2 (nunca se guarda en claro)
+async function hashPassword(pw, saltHex) {
+  const salt = saltHex ? Uint8Array.from(saltHex.match(/../g).map(h => parseInt(h, 16))) : crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
+  const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+  return `${hex(salt)}:${hex(bits)}`;
+}
+async function checkPassword(pw, stored) {
+  if (!stored || !pw) return false;
+  const [salt] = stored.split(':');
+  return safeEqual(await hashPassword(pw, salt), stored);
 }
 
 const PUBLIC_UNIT_FIELDS = ['id', 'slug', 'name', 'summary', 'description', 'max_guests', 'base_guests', 'bedrooms', 'beds', 'bathrooms', 'base_price', 'min_nights', 'cleaning_fee', 'extra_guest_fee', 'max_advance_days'];
@@ -219,19 +253,31 @@ async function publicApi(req, env, url, path) {
 // ---------- API del panel ----------
 async function adminApi(req, env, url, path) {
   const db = env.DB;
-  if (path === '/api/admin/login' && req.method === 'POST') {
-    const { password } = await body(req);
-    if (!env.ADMIN_PASSWORD) return bad('Falta configurar ADMIN_PASSWORD en Cloudflare', 500);
-    if (!password || !(await safeEqual(String(password), env.ADMIN_PASSWORD))) {
-      await new Promise(r => setTimeout(r, 800));
-      return bad('Contraseña incorrecta', 401);
-    }
+  const newSession = async () => {
     const token = randomToken();
     await db.batch([
       db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(sqlNow()),
       db.prepare('INSERT INTO sessions (token, expires_at) VALUES (?, ?)').bind(token, sqlNow(30 * 86400000)),
     ]);
     return json({ ok: true }, 200, { 'Set-Cookie': `ts_admin=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${30 * 86400}` });
+  };
+  const hasPassword = !!(env.ADMIN_PASSWORD || env.ADMIN_HASH);
+  if (path === '/api/admin/status' && req.method === 'GET') return json({ ok: true, setup: !hasPassword });
+  if (path === '/api/admin/setup' && req.method === 'POST') {
+    const { code, password } = await body(req);
+    if (hasPassword) return bad('La contraseña ya está creada', 409);
+    if (!env.SETUP_CODE || !code || !(await safeEqual(String(code).trim().toUpperCase(), env.SETUP_CODE))) { await new Promise(r => setTimeout(r, 800)); return bad('Código de activación incorrecto', 401); }
+    if (!password || String(password).length < 8) return bad('La contraseña debe tener al menos 8 caracteres');
+    await setSetting(db, 'admin_hash', await hashPassword(String(password)));
+    await setSetting(db, 'setup_code', null);
+    return newSession();
+  }
+  if (path === '/api/admin/login' && req.method === 'POST') {
+    const { password } = await body(req);
+    if (!hasPassword) return bad('Primero crea tu contraseña', 409);
+    const ok = env.ADMIN_PASSWORD ? await safeEqual(String(password || ''), env.ADMIN_PASSWORD) : await checkPassword(String(password || ''), env.ADMIN_HASH);
+    if (!ok) { await new Promise(r => setTimeout(r, 800)); return bad('Contraseña incorrecta', 401); }
+    return newSession();
   }
   if (path === '/api/admin/logout') {
     const t = getCookie(req, 'ts_admin');
@@ -242,6 +288,49 @@ async function adminApi(req, env, url, path) {
 
   const b = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) ? await body(req) : {};
   let m;
+
+  if (path === '/api/admin/password' && req.method === 'POST') {
+    if (env.ADMIN_PASSWORD) return bad('La contraseña está fijada en Cloudflare (ADMIN_PASSWORD); cámbiala allí');
+    if (!(await checkPassword(String(b.current || ''), env.ADMIN_HASH))) return bad('La contraseña actual no es correcta', 401);
+    if (!b.password || String(b.password).length < 8) return bad('La nueva contraseña debe tener al menos 8 caracteres');
+    await setSetting(db, 'admin_hash', await hashPassword(String(b.password)));
+    await db.prepare('DELETE FROM sessions WHERE token != ?').bind(getCookie(req, 'ts_admin')).run();
+    return json({ ok: true });
+  }
+
+  // Conectar Stripe desde el panel: valida la clave y crea el webhook automáticamente
+  if (path === '/api/admin/stripe' && req.method === 'POST') {
+    if (env.STRIPE_SECRET_KEY && !env.STRIPE_FROM_PANEL) return bad('Stripe ya está configurado en Cloudflare');
+    const key = String(b.key || '').trim();
+    if (!/^(sk|rk)_(test|live)_[A-Za-z0-9]+$/.test(key)) return bad('Esa no parece una clave secreta de Stripe (empieza por sk_test_ o sk_live_)');
+    const sreq = async (method, p, params) => {
+      const r = await fetch('https://api.stripe.com/v1' + p, { method, headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: params ? new URLSearchParams(params) : undefined });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error?.message || 'Error de Stripe'); return j;
+    };
+    try {
+      const acct = await sreq('GET', '/account');
+      const hookUrl = `${url.origin}/api/stripe/webhook`;
+      const existing = await sreq('GET', '/webhook_endpoints?limit=100');
+      for (const w of existing.data) if (w.url === hookUrl) await sreq('DELETE', `/webhook_endpoints/${w.id}`);
+      const params = new URLSearchParams({ url: hookUrl, description: 'Terracota Suites · reservas web' });
+      for (const e of ['checkout.session.completed', 'checkout.session.expired', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed']) params.append('enabled_events[]', e);
+      const hook = await sreq('POST', '/webhook_endpoints', params);
+      const name = acct.settings?.dashboard?.display_name || acct.business_profile?.name || acct.email || acct.id;
+      await db.batch([
+        ...[['stripe_secret_key', key], ['stripe_webhook_secret', hook.secret], ['stripe_webhook_id', hook.id], ['stripe_account', name]]
+          .map(([k, v]) => db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(k, v)),
+      ]);
+      return json({ ok: true, account: name, mode: key.includes('_live_') ? 'live' : 'test' });
+    } catch (e) { return bad('Stripe no aceptó la clave: ' + e.message); }
+  }
+  if (path === '/api/admin/stripe' && req.method === 'DELETE') {
+    if (env.STRIPE_FROM_PANEL) {
+      const s2 = await getSettings(db, true);
+      if (s2.stripe_webhook_id) await fetch(`https://api.stripe.com/v1/webhook_endpoints/${s2.stripe_webhook_id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${s2.stripe_secret_key}` } }).catch(() => {});
+    }
+    for (const k of ['stripe_secret_key', 'stripe_webhook_secret', 'stripe_webhook_id', 'stripe_account']) await setSetting(db, k, null);
+    return json({ ok: true });
+  }
 
   if (path === '/api/admin/state' && req.method === 'GET') {
     const [units, seasons, promos, feeds, photos, settings, pendingCount] = await Promise.all([
@@ -255,7 +344,8 @@ async function adminApi(req, env, url, path) {
     ]);
     return json({ ok: true, units: units.results, seasons: seasons.results, promos: promos.results, feeds: feeds.results, photos: photos.results, settings,
       today: todayMadrid(), origin: url.origin, stripe: !!env.STRIPE_SECRET_KEY, stripeMode: (env.STRIPE_SECRET_KEY || '').startsWith('sk_live') ? 'live' : (env.STRIPE_SECRET_KEY ? 'test' : 'off'),
-      webhook: !!env.STRIPE_WEBHOOK_SECRET, mail: !!env.RESEND_API_KEY, pending: pendingCount.n });
+      webhook: !!env.STRIPE_WEBHOOK_SECRET, mail: !!env.RESEND_API_KEY, pending: pendingCount.n,
+      stripeAccount: env.STRIPE_ACCOUNT, stripeFromPanel: env.STRIPE_FROM_PANEL, passwordInCloudflare: !!env.ADMIN_PASSWORD });
   }
 
   // Calendario detallado para el panel
@@ -444,7 +534,7 @@ async function adminApi(req, env, url, path) {
 
   // Ajustes y textos de la web
   if (path === '/api/admin/settings' && req.method === 'PUT') {
-    const stmts = Object.entries(b).filter(([k]) => /^[a-z_]{2,40}$/.test(k))
+    const stmts = Object.entries(b).filter(([k]) => /^[a-z_]{2,40}$/.test(k) && !SECRET_KEYS.includes(k))
       .map(([k, v]) => db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(k, String(v ?? '')));
     if (stmts.length) await db.batch(stmts);
     return json({ ok: true });
@@ -481,6 +571,7 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
     try {
+      if (path.startsWith('/api/')) env = await withConfig(env);
       if (path.startsWith('/api/admin/')) return await adminApi(req, env, url, path);
       if (path.startsWith('/api/')) {
         const r = await publicApi(req, env, url, path);

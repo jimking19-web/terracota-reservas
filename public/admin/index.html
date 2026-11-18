@@ -15,7 +15,12 @@
 <div id="login" class="login" hidden>
   <form id="loginForm" class="login-card">
     <div class="logo">Terracota <small>Panel</small></div>
-    <label>Contraseña<input type="password" id="pw" autocomplete="current-password" autofocus></label>
+    <div id="setupBox" hidden>
+      <p class="setup-intro">Bienvenido. Crea la contraseña con la que entrarás al panel.</p>
+      <label>Código de activación<input id="setupCode" autocomplete="off" style="text-transform:uppercase"></label>
+    </div>
+    <label><span id="pwLabel">Contraseña</span><input type="password" id="pw" autocomplete="current-password" autofocus></label>
+    <label id="pw2Box" hidden>Repite la contraseña<input type="password" id="pw2" autocomplete="new-password"></label>
     <p class="err" id="loginErr"></p>
     <button class="btn primary block">Entrar</button>
   </form>
@@ -32,6 +37,7 @@
       <button data-tab="codigos"><i>%</i>Descuentos y códigos</button>
       <button data-tab="sincro"><i>⇄</i>Airbnb / Booking</button>
       <button data-tab="web"><i>✎</i>Web y fotos</button>
+      <button data-tab="pagos"><i>⚿</i>Pagos y cuenta</button>
     </nav>
     <div class="side-foot">
       <a href="/" target="_blank">Ver la web ↗</a>
@@ -209,6 +215,18 @@
           <label>Mostrar «Superanfitriones»<select name="superhost"><option value="1">Sí</option><option value="0">No</option></select></label>
           <label class="span2">Titular (nombre legal)<input name="legal_name"></label>
           <label class="span2">NIF<input name="legal_id"></label>
+        </div>
+      </form>
+    </section>
+    <!-- PAGOS -->
+    <section data-view="pagos" class="view" hidden>
+      <div class="card" id="stripeCard"></div>
+      <form class="card" id="pwForm">
+        <div class="card-h"><h2>Cambiar contraseña del panel</h2><button class="btn primary">Cambiar</button></div>
+        <div class="fgrid">
+          <label>Contraseña actual<input type="password" name="current" autocomplete="current-password" required></label>
+          <label>Nueva contraseña<input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+          <label>Repite la nueva<input type="password" name="password2" autocomplete="new-password" minlength="8" required></label>
         </div>
       </form>
     </section>
