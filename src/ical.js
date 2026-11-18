@@ -87,8 +87,10 @@ export async function exportIcal(db, unit, host) {
     if (run && addDays(run.e, 1) === date) run.e = date; else { flush(); run = { s: date, e: date }; }
   }
   flush();
+  // Booking.com rechaza calendarios sin ningún evento: añadimos uno en el pasado (no bloquea nada)
+  lines.push('BEGIN:VEVENT', `UID:placeholder-${unit.id}@${host}`, `DTSTAMP:${stamp}`, 'DTSTART;VALUE=DATE:20200101', 'DTEND;VALUE=DATE:20200102', 'SUMMARY:Terracota Suites', 'END:VEVENT');
   lines.push('END:VCALENDAR');
-  return lines.join('\r\n');
+  return lines.join('\r\n') + '\r\n';
 }
 
 export { eachNight };
