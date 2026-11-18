@@ -4,7 +4,7 @@ import { calendar, getUnit, loadContext, night, quote, money } from './pricing.j
 import { exportIcal, syncAll, syncFeed } from './ical.js';
 import { createCheckout, verifyWebhook } from './stripe.js';
 import { guestEmail, ownerEmail, sendMail, mailEnabled } from './mail.js';
-import { ensureInvoice, invoiceReady, invoiceUrl, serveInvoice } from './invoice.js';
+import { ensureInvoice, invoiceReady, invoiceUrl, serveInvoice, sampleBooking, refToken, invoiceHtml } from './invoice.js';
 
 const HOLD_MINUTES = 31;          // Stripe exige mínimo 30 min de validez en Checkout
 const REQUEST_HOLD_HOURS = 48;    // si no hay Stripe: la solicitud bloquea 48 h hasta que la confirmes
@@ -373,6 +373,17 @@ async function adminApi(req, env, url, path) {
     await setSetting(db, 'smtp_user', user); await setSetting(db, 'smtp_pass', pass);
     return json({ ok: true });
   }
+  if (path === '/api/admin/mail/sample' && req.method === 'POST') {
+    if (!mailEnabled(env)) return bad('Primero activa los emails');
+    const site = await getSettings(db);
+    const unit = await getUnit(db, 1);
+    const sb = await sampleBooking(db, unit, site);
+    const to = String(b.to || site.email || env.SMTP_USER).trim();
+    const origin = url.origin;
+    const r = await sendMail(env, { to, fromName: site.site_name, replyTo: site.email || undefined, subject: `[MUESTRA] Reserva confirmada · ${site.site_name} · ${sb.ref}`,
+      html: guestEmail(site, unit, sb, { origin, heroUrl: site.hero_photo ? `${origin}/foto/${site.hero_photo}` : '', bookingUrl: origin, invoiceUrl: invoiceReady(site) ? `${origin}/factura/muestra?t=${await refToken(db, 'muestra')}` : '' }) });
+    return r.ok ? json({ ok: true, to }) : bad('No se pudo enviar: ' + (r.error || ''));
+  }
   if (path === '/api/admin/mail' && req.method === 'DELETE') {
     await setSetting(db, 'smtp_user', null); await setSetting(db, 'smtp_pass', null);
     return json({ ok: true });
@@ -681,6 +692,12 @@ export default {
         if (!p) return new Response('No encontrada', { status: 404 });
         if (p.src) return env.ASSETS.fetch(new Request(new URL(p.src, url), req));
         return new Response(new Uint8Array(p.data), { headers: { 'Content-Type': p.mime, 'Cache-Control': 'public, max-age=31536000, immutable' } });
+      }
+      if (path === '/factura/muestra') {
+        const site = await getSettings(env.DB);
+        if (url.searchParams.get('t') !== (await refToken(env.DB, 'muestra')) || !invoiceReady(site)) return new Response('Enlace no válido', { status: 403 });
+        const unit = await getUnit(env.DB, 1);
+        return new Response(invoiceHtml(site, unit, await sampleBooking(env.DB, unit, site), url.origin), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
       }
       if ((m = path.match(/^\/factura\/(TS-[A-Z0-9]{6})$/))) {
         return serveInvoice(env, m[1], url.searchParams.get('t'), url.origin, await getSettings(env.DB));

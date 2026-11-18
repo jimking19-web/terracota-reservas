@@ -524,9 +524,10 @@ function renderMail() {
     c.innerHTML = `<div class="card-h"><h2>Emails a los huéspedes</h2></div>
       <div class="stripe-ok">✓ Activados${S.mailUser ? ' · se envían desde ' + esc(S.mailUser) : ''}</div>
       <p class="hint">Cada reserva pagada envía al huésped la confirmación con el resumen${S.invoices ? ' y su factura' : ''}, y a ti un aviso. Desde cada reserva puedes reenviarla.</p>
-      ${S.mailUser && S.mailUser !== 'Resend' ? '<div class="row-btns"><button class="btn" id="mailChange">Cambiar cuenta</button><button class="btn danger-ghost" id="mailOff">Desactivar</button></div>' : ''}
+      ${S.mailUser && S.mailUser !== 'Resend' ? '<div class="row-btns"><button class="btn primary" id="mailSample">Enviarme un email de muestra</button><button class="btn" id="mailChange">Cambiar cuenta</button><button class="btn danger-ghost" id="mailOff">Desactivar</button></div>' : ''}
       <div id="mailFormBox"></div>`;
     $('#mailChange') && ($('#mailChange').onclick = mailForm);
+    $('#mailSample') && ($('#mailSample').onclick = async () => { const bt = $('#mailSample'); bt.disabled = true; bt.textContent = 'Enviando…'; const r = await api('/api/admin/mail/sample', 'POST', {}); bt.disabled = false; bt.textContent = 'Enviarme un email de muestra'; r.ok ? toast('Muestra enviada a ' + r.to) : toast(r.error, true); });
     $('#mailOff') && ($('#mailOff').onclick = async () => { if (confirm('¿Desactivar los emails? Los huéspedes dejarán de recibir la confirmación.') && await act(api('/api/admin/mail', 'DELETE'), 'Emails desactivados')) { await refresh(); renderPagos(); } });
   } else {
     c.innerHTML = `<div class="card-h"><h2>Emails a los huéspedes</h2></div><div id="mailFormBox"></div>`;

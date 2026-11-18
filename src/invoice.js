@@ -107,3 +107,19 @@ export async function serveInvoice(env, ref, token, origin, site) {
   const unit = await getUnit(db, b.unit_id);
   return new Response(invoiceHtml(site, unit, b, origin), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
+
+// Reserva inventada para enseñar el email y la factura (no se guarda ni gasta numeración)
+export async function sampleBooking(db, unit, site) {
+  const { quote } = await import('./pricing.js');
+  const add = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  let checkin = add(todayMadrid(), 21);
+  while (new Date(checkin + 'T00:00:00Z').getUTCDay() !== 5) checkin = add(checkin, 1);   // un viernes
+  const checkout = add(checkin, 2);
+  const extras = (await db.prepare('SELECT id FROM extras WHERE active = 1 ORDER BY sort, id LIMIT 1').all()).results;
+  let q = await quote(db, unit, { checkin, checkout, guests: 2, extras: extras.length ? { [extras[0].id]: 1 } : {} }, { admin: true });
+  const lines = q.ok ? q.lines : [{ type: 'nights', label: '2 noches × 190,00 €', amount: 38000 }, { type: 'discount', label: 'Descuento 2+ noches (−25%)', amount: -9500 }];
+  const total = lines.reduce((a, l) => a + l.amount, 0);
+  return { id: 0, ref: 'TS-MUESTRA', unit_id: unit.id, checkin, checkout, nights: 2, guests: 2, name: 'Lucía Martínez Pérez', email: 'lucia@ejemplo.com', phone: '600 000 000',
+    total, breakdown: JSON.stringify(lines), status: 'confirmed', paid: 1, stripe_payment: 'pi_muestra', source: 'web',
+    invoice_no: `${(site.invoice_prefix || 'F').trim()}${todayMadrid().slice(0, 4)}-MUESTRA`, invoice_date: todayMadrid(), billing: null };
+}
