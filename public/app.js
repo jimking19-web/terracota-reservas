@@ -112,7 +112,7 @@ function fillUnit(u) {
   if (u.bedrooms) f.push(`${u.bedrooms} ${u.bedrooms === 1 ? 'dormitorio' : 'dormitorios'}`);
   if (u.beds) f.push(`${u.beds} ${u.beds === 1 ? 'cama' : 'camas'}`);
   if (u.bathrooms) f.push(`${u.bathrooms} ${u.bathrooms === 1 ? 'baño' : 'baños'}`);
-  f.push(`Mínimo ${u.min_nights} ${u.min_nights === 1 ? 'noche' : 'noches'}`);
+  if (u.min_nights > 1) f.push(`Mínimo ${u.min_nights} noches`);
   $('#facts').innerHTML = f.map(x => `<li>${esc(x)}</li>`).join('');
   if (u.description) $('#description').innerHTML = String(u.description).split(/\n\s*\n/).map(p => `<p>${esc(p)}</p>`).join('');
   state.guests = Math.min(state.guests, u.max_guests);
@@ -187,7 +187,7 @@ function renderCalendar() {
       if (d === state.checkout) cls.push('end');
       if (state.checkin && state.checkout && d > state.checkin && d < state.checkout) cls.push('inrange');
       const showPrice = c && c.f && !past;
-      html += `<button class="${cls.join(' ')}" data-d="${d}" ${enabled ? '' : 'disabled'} title="${c && c.f ? `Mín. ${c.m} noches` : ''}"><span class="n">${i}</span><span class="p">${showPrice ? eur(c.p, 0).replace(/\s?€/, '€') : '&nbsp;'}</span></button>`;
+      html += `<button class="${cls.join(' ')}" data-d="${d}" ${enabled ? '' : 'disabled'} title="${c && c.f && c.m > 1 ? `Mín. ${c.m} noches` : ''}"><span class="n">${i}</span><span class="p">${showPrice ? eur(c.p, 0).replace(/\s?€/, '€') : '&nbsp;'}</span></button>`;
     }
     html += '</div></div>';
   }
@@ -197,7 +197,7 @@ function renderCalendar() {
   $('#calNext').disabled = state.monthOffset >= maxOffset;
   const c = state.checkin && state.cal.get(state.checkin);
   $('#calHint').textContent = !state.checkin ? 'Selecciona el día de entrada'
-    : !state.checkout ? `Ahora el día de salida · mínimo ${c?.m || 1} ${c?.m === 1 ? 'noche' : 'noches'}`
+    : !state.checkout ? (c?.m > 1 ? `Ahora el día de salida · mínimo ${c.m} noches` : 'Ahora elige el día de salida')
     : `${diff(state.checkin, state.checkout)} noches · ${fdate(state.checkin)} → ${fdate(state.checkout)}`;
 }
 
