@@ -54,10 +54,18 @@ function fillSettings(s) {
   $('#heroBadges').innerHTML = badges.map(b => `<span class="badge">${esc(b)}</span>`).join('');
   const c = [];
   if (s.phone) c.push(`<li>Tel. <a href="tel:${esc(s.phone.replace(/\s/g, ''))}">${esc(s.phone)}</a></li>`);
-  if (s.whatsapp) c.push(`<li><a href="https://wa.me/${esc(s.whatsapp.replace(/\D/g, ''))}" target="_blank" rel="noopener">WhatsApp</a></li>`);
+  if (s.whatsapp) c.push(`<li><a href="https://wa.me/${esc(s.whatsapp.replace(/\D/g, '').replace(/^(?=[67]\d{8}$)/, '34'))}" target="_blank" rel="noopener">WhatsApp</a></li>`);
   if (s.email) c.push(`<li><a href="mailto:${esc(s.email)}">${esc(s.email)}</a></li>`);
   if (s.instagram) c.push(`<li><a href="https://instagram.com/${esc(s.instagram.replace('@', ''))}" target="_blank" rel="noopener">@${esc(s.instagram.replace('@', ''))}</a></li>`);
   $('#contact').innerHTML = c.join('') || '<li>Escríbenos desde el formulario de reserva</li>';
+  const waNum = (s.whatsapp || '').replace(/\D/g, '').replace(/^(?=[67]\d{8}$)/, '34');
+  if (waNum) {
+    const waUrl = `https://wa.me/${waNum}?text=${encodeURIComponent(`Hola, tengo una consulta sobre ${s.site_name || 'Terracota Suites'}`)}`;
+    for (const id of ['#waFloat', '#faqWa']) { $(id).href = waUrl; $(id).hidden = false; }
+  }
+  const faqs = lines(s.faq).map(l => l.split('|')).filter(([q, a]) => q && a);
+  $('#faq').hidden = !faqs.length;
+  $('#faqList').innerHTML = faqs.map(([q, ...a]) => `<details><summary>${esc(q)}</summary><p>${esc(a.join('|'))}</p></details>`).join('');
   const legal = [s.license && `Nº registro turístico: ${s.license}`, s.legal_name, s.legal_id].filter(Boolean);
   $('#legal').textContent = legal.join(' · ');
   $('#year').textContent = new Date().getFullYear();
