@@ -64,22 +64,37 @@ function fillSettings(s) {
   $('#map').innerHTML = `<iframe loading="lazy" title="Mapa" src="https://www.google.com/maps?q=${encodeURIComponent(s.map_query || s.address)}&z=13&output=embed"></iframe>`;
 }
 
+const PHOTO_CATS = [['salon', 'Salón'], ['cocina', 'Cocina'], ['dormitorio', 'Dormitorio'], ['bano', 'Baño'], ['exterior', 'Alberca y patio']];
 function fillPhotos(photos) {
   const gen = photos.filter(p => !p.unit_id || p.unit_id === state.unit.id);
-  state.photos = gen;
+  state.allPhotos = gen;
   const hero = state.site.settings.hero_photo ? Number(state.site.settings.hero_photo) : gen[0]?.id;
   const bg = $('#heroBg');
   if (hero) { bg.style.backgroundImage = `url(/foto/${hero})`; bg.classList.remove('placeholder'); } else bg.classList.add('placeholder');
-  const intro = gen[1] || gen[0];
+  const intro = gen.find(p => p.id !== hero) || gen[0];
   $('#introPhoto').innerHTML = intro ? `<img src="/foto/${intro.id}" alt="${esc(intro.caption || state.unit.name)}" loading="lazy">` : '<div class="ph">Terracota</div>';
+  const cats = PHOTO_CATS.filter(([k]) => gen.some(p => p.category === k));
+  $('#galTabs').innerHTML = cats.length ? [['', 'Todas'], ...cats].map(([k, l]) => `<button type="button" role="tab" data-cat="${k}">${esc(l)} <small>${k ? gen.filter(p => p.category === k).length : gen.length}</small></button>`).join('') : '';
+  $('#galTabs').hidden = !cats.length;
+  showGallery(state.galCat || '');
+  $('#openGallery').hidden = !gen.length;
+}
+function showGallery(cat) {
+  state.galCat = cat;
+  const gen = state.allPhotos || [];
+  // "Todas": por secciones (salón, cocina, dormitorio, baño, exterior) y dentro de cada una en el orden del panel
+  const rank = k => { const i = PHOTO_CATS.findIndex(c => c[0] === k); return i < 0 ? 99 : i; };
+  const list = cat ? gen.filter(p => p.category === cat) : [...gen].sort((a, b) => rank(a.category) - rank(b.category));
+  state.photos = list;
+  $$('#galTabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.cat === cat)));
   const slots = 5;
   let html = '';
   for (let i = 0; i < slots; i++) {
-    const p = gen[i];
-    html += `<button data-i="${i}" aria-label="Ver foto">${p ? `<img src="/foto/${p.id}" alt="${esc(p.caption || '')}" loading="lazy">` : '<div class="ph">Foto próximamente</div>'}${i === slots - 1 && gen.length > slots ? `<span class="more">+${gen.length - slots} fotos</span>` : ''}</button>`;
+    const p = list[i];
+    html += `<button data-i="${i}" aria-label="Ver foto">${p ? `<img src="/foto/${p.id}" alt="${esc(p.caption || '')}" loading="lazy">` : '<div class="ph"></div>'}${i === slots - 1 && list.length > slots ? `<span class="more">+${list.length - slots} fotos</span>` : ''}</button>`;
   }
   $('#gallery').innerHTML = html;
-  $('#openGallery').hidden = !gen.length;
+  $('#gallery').classList.toggle('few', list.length < slots);
 }
 
 function fillUnit(u) {
@@ -292,6 +307,7 @@ function bind() {
   $$('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
   $('#gallery').onclick = e => { const b = e.target.closest('button'); if (b && state.photos[Number(b.dataset.i)]) openLightbox(Number(b.dataset.i)); };
   $('#openGallery').onclick = () => openLightbox(0);
+  $('#galTabs').onclick = e => { const b = e.target.closest('button'); if (b) showGallery(b.dataset.cat); };
   $('#lbPrev').onclick = () => openLightbox(lbIndex - 1);
   $('#lbNext').onclick = () => openLightbox(lbIndex + 1);
   $('#lightbox').addEventListener('keydown', e => { if (e.key === 'ArrowLeft') openLightbox(lbIndex - 1); if (e.key === 'ArrowRight') openLightbox(lbIndex + 1); });

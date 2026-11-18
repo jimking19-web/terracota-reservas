@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS photos (
   data BLOB NOT NULL,
   caption TEXT,
   sort INTEGER NOT NULL DEFAULT 0,
+  category TEXT,            -- salon, cocina, dormitorio, bano, exterior
   src TEXT                  -- si tiene valor, la foto se sirve desde /public (p. ej. /img/fotos/x.jpg)
 );
 

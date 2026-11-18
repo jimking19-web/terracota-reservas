@@ -144,14 +144,22 @@ textarea { resize: vertical; }
 .copy input { font-family: ui-monospace, monospace; font-size: 12.5px; }
 
 .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
-.photo { position: relative; border-radius: 12px; overflow: hidden; aspect-ratio: 4/3; background: var(--bg); cursor: grab; border: 2px solid transparent; }
+.photo { position: relative; border-radius: 12px; overflow: hidden; aspect-ratio: 4/3; background: var(--bg); border: 2px solid transparent; }
 .photo.hero { border-color: var(--terra); }
 .photo img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 .photo .acts { position: absolute; inset: auto 6px 6px 6px; display: flex; gap: 4px; justify-content: flex-end; }
 .photo .acts button { border: 0; background: rgba(255, 255, 255, .92); border-radius: 8px; width: 30px; height: 30px; font-size: 14px; }
 .photo .acts button.on { background: var(--terra); color: #fff; }
 .photo .idx { position: absolute; top: 6px; left: 6px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11px; font-weight: 800; border-radius: 6px; padding: 1px 7px; }
-.photo.dragging { opacity: .4; }
+.photo .acts .sp { flex: 1; }
+.photo .acts button:disabled { opacity: .35; }
+.photo select { position: absolute; top: 6px; right: 6px; max-width: 60%; font-size: 12px; padding: 3px 6px; border-radius: 8px; border: 0; background: rgba(255, 255, 255, .92); }
+.photo .cap { position: absolute; left: 6px; right: 6px; bottom: 42px; color: #fff; font-size: 11.5px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-group { margin-top: 18px; }
+.ph-group h3 { font-size: 15px; margin: 0 0 4px; }
+.ph-group .photos { margin-top: 8px; }
+.hero-prev { display: flex; gap: 14px; align-items: center; }
+.hero-prev img { width: 220px; max-width: 55%; aspect-ratio: 16/9; object-fit: cover; border-radius: 12px; border: 2px solid var(--terra); }
 
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 300%); visibility: hidden; background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 12px; font-weight: 700; transition: transform .25s; z-index: 100; max-width: calc(100% - 30px); }
 .toast.show { transform: translate(-50%, 0); visibility: visible; }

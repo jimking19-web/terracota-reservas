@@ -133,7 +133,7 @@ async function publicApi(req, env, url, path) {
     const [settings, units, photos] = await Promise.all([
       getSettings(db),
       db.prepare('SELECT * FROM units WHERE active = 1 ORDER BY sort, id').all(),
-      db.prepare('SELECT id, unit_id, caption FROM photos ORDER BY sort, id').all(),
+      db.prepare('SELECT id, unit_id, caption, category FROM photos ORDER BY sort, id').all(),
     ]);
     return json({ settings, units: units.results.map(u => pick(u, PUBLIC_UNIT_FIELDS)), photos: photos.results, payments: !!env.STRIPE_SECRET_KEY, today: todayMadrid() },
       200, { 'Cache-Control': 'public, max-age=30' });
@@ -338,7 +338,7 @@ async function adminApi(req, env, url, path) {
       db.prepare('SELECT * FROM seasons ORDER BY start_date').all(),
       db.prepare('SELECT * FROM promo_codes ORDER BY id DESC').all(),
       db.prepare('SELECT * FROM ical_feeds ORDER BY id').all(),
-      db.prepare('SELECT id, unit_id, caption, sort, length(data) AS size FROM photos ORDER BY sort, id').all(),
+      db.prepare('SELECT id, unit_id, caption, category, sort, length(data) AS size FROM photos ORDER BY sort, id').all(),
       getSettings(db),
       db.prepare("SELECT count(*) AS n FROM bookings WHERE status = 'pending' AND (expires_at IS NULL OR expires_at > ?)").bind(sqlNow()).first(),
     ]);
@@ -547,7 +547,7 @@ async function adminApi(req, env, url, path) {
     const bin = Uint8Array.from(atob(m2[2]), c => c.charCodeAt(0));
     if (bin.length > 1800000) return bad('Imagen demasiado grande');
     const max = await db.prepare('SELECT coalesce(max(sort), 0) AS s FROM photos').first();
-    const r = await db.prepare('INSERT INTO photos (unit_id, mime, data, caption, sort) VALUES (?,?,?,?,?)').bind(intOrNull(b.unit_id), m2[1], bin, b.caption || '', max.s + 1).run();
+    const r = await db.prepare('INSERT INTO photos (unit_id, mime, data, caption, sort, category) VALUES (?,?,?,?,?,?)').bind(intOrNull(b.unit_id), m2[1], bin, b.caption || '', max.s + 1, b.category || null).run();
     return json({ ok: true, id: r.meta.last_row_id });
   }
   if (path === '/api/admin/photos/order' && req.method === 'PUT') {
@@ -556,7 +556,13 @@ async function adminApi(req, env, url, path) {
   }
   if ((m = path.match(/^\/api\/admin\/photos\/(\d+)$/))) {
     if (req.method === 'DELETE') { await db.prepare('DELETE FROM photos WHERE id = ?').bind(Number(m[1])).run(); return json({ ok: true }); }
-    if (req.method === 'PATCH') { await db.prepare('UPDATE photos SET caption = ?, unit_id = ? WHERE id = ?').bind(b.caption || '', intOrNull(b.unit_id), Number(m[1])).run(); return json({ ok: true }); }
+    if (req.method === 'PATCH') {
+      const cur = await db.prepare('SELECT caption, unit_id, category FROM photos WHERE id = ?').bind(Number(m[1])).first();
+      if (!cur) return bad('Foto no encontrada', 404);
+      const v = k => (k in b ? b[k] : cur[k]);
+      await db.prepare('UPDATE photos SET caption = ?, unit_id = ?, category = ? WHERE id = ?').bind(v('caption') || '', intOrNull(v('unit_id')), v('category') || null, Number(m[1])).run();
+      return json({ ok: true });
+    }
   }
 
   return bad('Ruta no encontrada', 404);

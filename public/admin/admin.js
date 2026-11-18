@@ -500,24 +500,42 @@ function renderWeb() {
   uf.active.value = String(u.active);
   renderPhotos();
 }
+const PHOTO_CATS = [['salon', 'Salón'], ['cocina', 'Cocina'], ['dormitorio', 'Dormitorio'], ['bano', 'Baño'], ['exterior', 'Alberca y patio'], ['', 'Sin sección']];
 function renderPhotos() {
   const hero = Number(S.settings.hero_photo) || S.photos[0]?.id;
-  $('#photos').innerHTML = S.photos.map((p, i) => `<div class="photo ${p.id === hero ? 'hero' : ''}" draggable="true" data-pid="${p.id}"><img src="/foto/${p.id}" alt=""><span class="idx">${i + 1}${p.unit_id ? ' · ' + esc((S.units.find(u => u.id === p.unit_id) || {}).name || '') : ''}</span>
-    <div class="acts"><button type="button" data-hero="${p.id}" class="${p.id === hero ? 'on' : ''}" title="Usar de portada">★</button><button type="button" data-cap="${p.id}" title="Pie de foto">✎</button><button type="button" data-pdel="${p.id}" title="Borrar">🗑</button></div></div>`).join('')
-    || '<p class="muted" style="grid-column:1/-1">Aún no hay fotos. La web muestra un fondo de color hasta que subas alguna.</p>';
-  $$('[data-hero]').forEach(b => b.onclick = async () => { await act(api('/api/admin/settings', 'PUT', { hero_photo: b.dataset.hero }), 'Portada cambiada'); await refresh(); renderPhotos(); });
-  $$('#photos [data-pdel]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar esta foto?') && await act(api('/api/admin/photos/' + b.dataset.pdel, 'DELETE'), 'Foto borrada')) { await refresh(); renderPhotos(); } });
+  const heroP = S.photos.find(p => p.id === hero);
+  const opts = sel => PHOTO_CATS.map(([k, l]) => `<option value="${k}" ${k === (sel || '') ? 'selected' : ''}>${l}</option>`).join('');
+  const card = (p, i, n) => `<div class="photo ${p.id === hero ? 'hero' : ''}" data-pid="${p.id}"><img src="/foto/${p.id}" alt="" loading="lazy">
+    ${p.id === hero ? '<span class="idx">★ Portada</span>' : ''}
+    <div class="acts"><button type="button" data-mv="-1" data-id="${p.id}" ${i === 0 ? 'disabled' : ''} title="Mover antes">◀</button><button type="button" data-mv="1" data-id="${p.id}" ${i === n - 1 ? 'disabled' : ''} title="Mover después">▶</button><span class="sp"></span><button type="button" data-hero="${p.id}" class="${p.id === hero ? 'on' : ''}" title="Usar de portada">★</button><button type="button" data-cap="${p.id}" title="Pie de foto">✎</button><button type="button" data-pdel="${p.id}" title="Borrar">🗑</button></div>
+    <select data-catsel="${p.id}" title="Sección">${opts(p.category)}</select>
+    ${p.caption ? `<span class="cap">${esc(p.caption)}</span>` : ''}</div>`;
+  let html = heroP ? `<div class="ph-group hero-pick"><h3>Portada de la web</h3><div class="hero-prev"><img src="/foto/${heroP.id}" alt=""><p class="muted small">Pulsa ★ en cualquier foto de abajo para cambiarla.</p></div></div>` : '';
+  for (const [k, l] of PHOTO_CATS) {
+    const list = S.photos.filter(p => (p.category || '') === k);
+    if (!list.length) continue;
+    html += `<div class="ph-group"><h3>${l} <span class="muted small">${list.length}</span></h3><div class="photos">${list.map((p, i) => card(p, i, list.length)).join('')}</div></div>`;
+  }
+  $('#photos').innerHTML = html || '<p class="muted">Aún no hay fotos. La web muestra un fondo de color hasta que subas alguna.</p>';
+  const reload = async () => { await refresh(); renderPhotos(); };
+  $$('[data-hero]').forEach(b => b.onclick = async () => { await act(api('/api/admin/settings', 'PUT', { hero_photo: b.dataset.hero }), 'Portada cambiada'); await reload(); });
+  $$('#photos [data-pdel]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar esta foto?') && await act(api('/api/admin/photos/' + b.dataset.pdel, 'DELETE'), 'Foto borrada')) await reload(); });
   $$('[data-cap]').forEach(b => b.onclick = async () => {
     const p = S.photos.find(x => x.id === Number(b.dataset.cap));
     const cap = prompt('Pie de foto (se ve al ampliarla)', p.caption || ''); if (cap === null) return;
-    await act(api('/api/admin/photos/' + p.id, 'PATCH', { caption: cap, unit_id: p.unit_id }), 'Guardado'); await refresh();
+    await act(api('/api/admin/photos/' + p.id, 'PATCH', { caption: cap }), 'Guardado'); await reload();
   });
-  // Arrastrar para ordenar
-  let dragEl = null;
-  $$('.photo').forEach(el => {
-    el.ondragstart = () => { dragEl = el; el.classList.add('dragging'); };
-    el.ondragend = async () => { el.classList.remove('dragging'); const ids = $$('.photo').map(x => Number(x.dataset.pid)); await api('/api/admin/photos/order', 'PUT', { ids }); await refresh(); renderPhotos(); };
-    el.ondragover = e => { e.preventDefault(); if (!dragEl || dragEl === el) return; const r = el.getBoundingClientRect(); el.parentNode.insertBefore(dragEl, e.clientX < r.left + r.width / 2 ? el : el.nextSibling); };
+  $$('[data-catsel]').forEach(s => s.onchange = async () => { await act(api('/api/admin/photos/' + s.dataset.catsel, 'PATCH', { category: s.value }), 'Sección cambiada'); await reload(); });
+  $$('[data-mv]').forEach(b => b.onclick = async () => {
+    const p = S.photos.find(x => x.id === Number(b.dataset.id));
+    const same = S.photos.filter(x => (x.category || '') === (p.category || ''));
+    const j = same.indexOf(p) + Number(b.dataset.mv);
+    if (j < 0 || j >= same.length) return;
+    const other = same[j];
+    const ids = S.photos.map(x => x.id);
+    const a = ids.indexOf(p.id), c = ids.indexOf(other.id);
+    [ids[a], ids[c]] = [ids[c], ids[a]];
+    await api('/api/admin/photos/order', 'PUT', { ids }); await reload();
   });
 }
 function resizeImage(file, max = 2000, quality = .84) {
