@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS units (
   min_advance_days INTEGER NOT NULL DEFAULT 0,     -- antelación mínima para reservar
   max_advance_days INTEGER NOT NULL DEFAULT 365,
   checkin_days TEXT NOT NULL DEFAULT '0,1,2,3,4,5,6', -- días de la semana en que se puede entrar
+  deposit_amount INTEGER NOT NULL DEFAULT 0,       -- fianza (céntimos) que se retiene en la tarjeta
+  deposit_when TEXT NOT NULL DEFAULT 'never',      -- never | always | rules
+  deposit_min_nights INTEGER NOT NULL DEFAULT 0,   -- rules: estancias de X noches o más
+  deposit_dates TEXT NOT NULL DEFAULT '[]',        -- rules: rangos [{from, to, label}] en los que aplica
+  deposit_release_days INTEGER NOT NULL DEFAULT 2, -- días tras la salida para liberarla
   ical_token TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1,
   sort INTEGER NOT NULL DEFAULT 0
@@ -100,6 +105,15 @@ CREATE TABLE IF NOT EXISTS bookings (
   invoice_no TEXT,                        -- nº de factura (se asigna al confirmar)
   invoice_date TEXT,
   mail_sent_at TEXT,                      -- último email de confirmación enviado al huésped
+  deposit INTEGER NOT NULL DEFAULT 0,     -- fianza de esta reserva (céntimos)
+  deposit_status TEXT,                    -- pending | held | captured | released
+  deposit_pi TEXT,                        -- PaymentIntent de la retención
+  deposit_held_at TEXT,
+  deposit_captured INTEGER,
+  deposit_keep INTEGER NOT NULL DEFAULT 0, -- 1 = no liberar automáticamente
+  deposit_note TEXT,
+  stripe_customer TEXT,
+  stripe_pm TEXT,                         -- tarjeta guardada para la fianza
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT
 );

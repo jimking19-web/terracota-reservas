@@ -161,9 +161,23 @@ export async function quote(db, unit, { checkin, checkout, guests, promo, extras
   return {
     ok: true, unit: unit.slug, checkin, checkout, nights, guests, lines, total,
     totalFormatted: money(total), promo: promoApplied, promoError,
+    deposit: depositFor(unit, checkin, checkout, nights),
     extras: extras.map(x => ({ id: x.id, name: x.name, description: x.description, price: x.price, per: x.per, max_qty: x.max_qty, qty: x.qty })),
     nightly: list.map(n => ({ date: n.date, price: n.price, source: n.source })),
   };
+}
+
+// ¿Lleva fianza esta estancia según la configuración del alojamiento?
+export function depositFor(unit, checkin, checkout, nights) {
+  const amount = unit.deposit_amount || 0;
+  if (amount <= 0 || !unit.deposit_when || unit.deposit_when === 'never') return 0;
+  if (unit.deposit_when === 'always') return amount;
+  if (unit.deposit_min_nights > 0 && nights >= unit.deposit_min_nights) return amount;
+  let ranges = [];
+  try { ranges = JSON.parse(unit.deposit_dates || '[]'); } catch {}
+  // Un rango «desde-hasta» incluye las noches de esas fechas: aplica si la estancia toca alguna
+  if (ranges.some(r => r.from && r.to && checkin <= r.to && checkout > r.from)) return amount;
+  return 0;
 }
 
 // Extras activos que se pueden ofrecer para una salida concreta

@@ -307,6 +307,35 @@ async function loadBookings() {
     + ext.map(x => `<tr><td><b>${esc(x.feed_name)}</b></td><td>${fd(x.start_date, { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${fd(x.end_date, { weekday: 'short', day: 'numeric', month: 'short' })}</td><td class="num">${diff(x.start_date, x.end_date)}</td><td class="muted">${esc(x.summary)}</td></tr>`).join('') + '</tbody>';
 }
 
+const DEP_ST = { pending: 'Pendiente de retener', held: 'Retenida en la tarjeta', captured: 'Cobrada', released: 'Liberada' };
+function depositBlock(b) {
+  if (!(b.deposit > 0)) return b.status === 'confirmed' ? `<div class="dep"><span class="muted">Sin fianza</span> <button type="button" class="linkbtn" data-dep="set">Añadir fianza</button></div>` : '';
+  const st = b.deposit_status || 'pending';
+  const rel = b.deposit_status === 'held' ? addDays(b.checkout, unit().deposit_release_days ?? 2) : null;
+  return `<div class="dep"><div><b>Fianza ${eur(b.deposit)}</b> · <span class="tag ${st === 'held' ? 't-confirmed' : st === 'captured' ? 't-cancelled' : 't-pending'}">${DEP_ST[st] || st}</span>
+    ${st === 'captured' ? ` · cobrados ${eur(b.deposit_captured)}` : ''}${rel && !b.deposit_keep ? `<br><span class="muted small">Se libera sola el ${fd(rel)}</span>` : ''}${b.deposit_note ? `<br><span class="muted small">${esc(b.deposit_note)}</span>` : ''}</div>
+    <div class="row-btns" style="margin-top:8px">
+      ${st === 'held' ? `<button type="button" class="btn" data-dep="capture">Cobrar fianza</button><button type="button" class="btn" data-dep="release">Liberar ya</button>
+        <label class="chk"><input type="checkbox" data-dep="keep" ${b.deposit_keep ? 'checked' : ''}> No liberar sola (revisar daños)</label>` : ''}
+      ${st === 'pending' && b.status === 'confirmed' ? `<button type="button" class="btn" data-dep="hold">Retener ahora</button><button type="button" class="btn" data-dep="link">Copiar enlace para el huésped</button>` : ''}
+      ${st !== 'held' && st !== 'captured' ? `<button type="button" class="linkbtn" data-dep="set">Cambiar importe</button>` : ''}
+    </div></div>`;
+}
+function bindDeposit(b, after) {
+  $$('[data-dep]').forEach(el => {
+    const a = el.dataset.dep;
+    const run = async (payload, ok) => { const r = await api(`/api/admin/bookings/${b.id}/deposit`, 'POST', payload); if (!r.ok) return toast(r.error, true); if (ok) toast(ok); return r; };
+    if (a === 'keep') { el.onchange = async () => { await run({ action: 'keep', keep: el.checked }, el.checked ? 'No se liberará sola' : 'Se liberará sola'); }; return; }
+    el.onclick = async () => {
+      if (a === 'set') { const v = prompt('Importe de la fianza en € (0 para quitarla):', b.deposit ? toEuros(b.deposit) : String((unit().deposit_amount || 12000) / 100)); if (v == null) return; if (await run({ action: 'set', amount: v }, 'Fianza actualizada')) after(); }
+      if (a === 'hold') { el.disabled = true; if (await run({ action: 'hold' }, 'Fianza retenida')) after(); el.disabled = false; }
+      if (a === 'link') { const r = await run({ action: 'link' }); if (r) { try { await navigator.clipboard.writeText(r.url); toast('Enlace copiado: pégalo en WhatsApp o email'); } catch { prompt('Copia este enlace:', r.url); } } }
+      if (a === 'release') { if (confirm('¿Liberar la fianza? Ya no podrás cobrarla.') && await run({ action: 'release' }, 'Fianza liberada')) after(); }
+      if (a === 'capture') { const v = prompt(`¿Cuánto cobras de la fianza? (máximo ${eur(b.deposit)})`, toEuros(b.deposit)); if (v == null) return; const why = prompt('Motivo (para tu registro):', '') ?? ''; if (await run({ action: 'capture', amount: v, reason: why }, 'Fianza cobrada')) after(); }
+    };
+  });
+}
+
 async function openBooking(id, cache) {
   let b = (cache || bCache).find(x => x.id === id);
   if (!b) { const r = await api('/api/admin/bookings?filter=all'); b = r.bookings.find(x => x.id === id); }
@@ -321,6 +350,7 @@ async function openBooking(id, cache) {
       <span>Creada</span><span>${esc(b.created_at)} UTC</span>${b.stripe_payment ? `<span>Pago Stripe</span><a href="https://dashboard.stripe.com/payments/${esc(b.stripe_payment)}" target="_blank">${esc(b.stripe_payment)}</a>` : ''}
       ${b.promo_code ? `<span>Código</span><b>${esc(b.promo_code)}</b>` : ''}</div>
     ${isBlock ? '' : `<div class="lines">${lines.map(l => `<div class="r"><span>${esc(l.label)}</span><span>${eur(l.amount)}</span></div>`).join('')}<div class="r t"><span>Total</span><span>${eur(b.total)}</span></div></div>`}
+    ${isBlock ? '' : depositBlock(b)}
     <form id="bEdit" class="fgrid" style="grid-template-columns:1fr 1fr">
       <label class="span2">Nombre<input name="name" value="${esc(b.name)}"></label>
       ${isBlock ? '' : `<label>Email<input name="email" value="${esc(b.email)}"></label><label>Teléfono<input name="phone" value="${esc(b.phone)}"></label>
@@ -354,6 +384,7 @@ async function openBooking(id, cache) {
     if (!r.ok) return toast(r.error, true);
     toast(r.mailed ? 'Reserva confirmada y email enviado' : r.mailError ? 'Confirmada, pero el email falló: ' + r.mailError : 'Reserva confirmada', !!r.mailError); after();
   });
+  bindDeposit(b, after);
   $('#bMail') && ($('#bMail').onclick = async () => { const bt = $('#bMail'); bt.disabled = true; bt.textContent = 'Enviando…'; if (await act(api(`/api/admin/bookings/${b.id}/email`, 'POST'), 'Email enviado a ' + b.email)) after(); else { bt.disabled = false; bt.textContent = 'Reenviar confirmación'; } });
   $('#bInvoice') && ($('#bInvoice').onclick = async () => { const w = window.open('', '_blank'); const r = await api(`/api/admin/bookings/${b.id}/invoice`, 'POST'); if (!r.ok) { w && w.close(); return toast(r.error, true); } if (w) w.location = r.url; else location.href = r.url; });
   $('#bCancel') && ($('#bCancel').onclick = async () => { if (!confirm(isBlock ? '¿Quitar este bloqueo?' : '¿Cancelar esta reserva? Las fechas quedarán libres.')) return; if (await act(api(`/api/admin/bookings/${b.id}`, 'PATCH', { status: 'cancelled' }), isBlock ? 'Bloqueo quitado' : 'Reserva cancelada')) after(); });
@@ -396,8 +427,36 @@ function bookingForm({ checkin = '', checkout = '' }) {
 }
 
 // ---------- TARIFAS ----------
+function renderDeposit() {
+  const u = unit(); const f = $('#depositForm');
+  f.deposit_amount.value = u.deposit_amount ? toEuros(u.deposit_amount) : '';
+  f.deposit_when.value = u.deposit_when || 'never';
+  f.deposit_min_nights.value = u.deposit_min_nights || '';
+  f.deposit_release_days.value = u.deposit_release_days ?? 2;
+  let ranges = []; try { ranges = JSON.parse(u.deposit_dates || '[]'); } catch {}
+  const toggle = () => { $('#depositRules').hidden = f.deposit_when.value !== 'rules'; };
+  f.deposit_when.onchange = toggle; toggle();
+  const draw = () => {
+    $('#depRanges').innerHTML = ranges.map((r, i) => `<div class="tier"><input type="date" style="width:160px" data-ri="${i}" data-k="from" value="${r.from || ''}"> → <input type="date" style="width:160px" data-ri="${i}" data-k="to" value="${r.to || ''}"> <input data-ri="${i}" data-k="label" value="${esc(r.label || '')}" placeholder="Nochevieja, Semana Santa…" style="width:180px"> <button type="button" class="linkbtn" data-rrm="${i}">Quitar</button></div>`).join('') || '<p class="muted small">Sin fechas</p>';
+    $$('#depRanges input').forEach(inp => inp.oninput = () => { ranges[inp.dataset.ri][inp.dataset.k] = inp.value; });
+    $$('[data-rrm]').forEach(b => b.onclick = () => { ranges.splice(Number(b.dataset.rrm), 1); draw(); });
+  };
+  $('#addDepRange').onclick = () => { ranges.push({ from: '', to: '', label: '' }); draw(); };
+  draw();
+  f._ranges = () => ranges;
+}
+$('#depositForm').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  const d = { deposit_amount: f.deposit_amount.value, deposit_when: f.deposit_when.value, deposit_min_nights: f.deposit_min_nights.value, deposit_release_days: f.deposit_release_days.value, deposit_dates: f._ranges ? f._ranges().filter(r => r.from && r.to) : [] };
+  if (d.deposit_when !== 'never' && !(Number(String(d.deposit_amount).replace(',', '.')) > 0)) return toast('Pon el importe de la fianza', true);
+  if (d.deposit_when === 'rules' && !(Number(d.deposit_min_nights) > 0) && !d.deposit_dates.length) return toast('Indica las noches mínimas o alguna fecha', true);
+  if (d.deposit_when !== 'never' && !S.stripe) toast('Ojo: la fianza necesita Stripe conectado', true);
+  if (await act(api('/api/admin/units/' + unitId, 'PUT', d), 'Fianza guardada')) { await refresh(); renderTarifas(); }
+};
+
 function renderTarifas() {
-  renderExtras();
+  renderExtras(); renderDeposit();
   const u = unit(); const f = $('#unitForm');
   for (const k of ['base_price', 'weekend_price', 'cleaning_fee', 'extra_guest_fee']) f[k].value = toEuros(u[k]);
   for (const k of ['min_nights', 'max_nights', 'max_guests', 'base_guests', 'min_advance_days', 'max_advance_days', 'last_minute_days', 'early_bird_days']) f[k].value = u[k] ?? '';

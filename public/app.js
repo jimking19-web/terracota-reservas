@@ -239,6 +239,7 @@ function renderSummary() {
   if (q?.ok) {
     $('#sumLines').innerHTML = q.lines.map(l => `<div class="row ${l.type}"><span>${esc(l.label)}</span><span>${eur(l.amount, 2)}</span></div>`).join('')
       + `<div class="row total"><span>Total</span><span>${eur(q.total, 2)}</span></div>`
+      + (q.deposit > 0 ? `<div class="deposit-note"><b>Fianza ${eur(q.deposit)}</b> · no se cobra: se retiene en tu tarjeta el día antes de llegar y se libera automáticamente tras la salida.</div>` : '')
       + (q.nightly.length > 1 ? `<details><summary>Precio por noche</summary><ul>${q.nightly.map(n => `<li>${fdate(n.date, { day: 'numeric', month: 'short' })} · ${eur(n.price)}</li>`).join('')}</ul></details>` : '');
     btn.disabled = false; btn.textContent = 'Reservar';
   } else {
@@ -277,6 +278,7 @@ function openGuestForm() {
   const q = state.quote; if (!q?.ok) return;
   $('#trip').innerHTML = `<div><b>${fdate(q.checkin)} → ${fdate(q.checkout)}</b><br>${q.nights} noches · ${q.guests} huéspedes</div><div><b>${eur(q.total, 2)}</b><br><span class="muted">total</span></div>`;
   $('#payBtn').textContent = state.site.payments ? `Pagar ${eur(q.total, 2)}` : 'Enviar solicitud de reserva';
+  $('#trip').insertAdjacentHTML('beforeend', q.deposit > 0 ? `<div class="deposit-note full">+ fianza de ${eur(q.deposit)} retenida (no cobrada) en tu tarjeta el día antes de la llegada</div>` : '');
   $('.secure').hidden = !state.site.payments;
   $('#formError').textContent = '';
   $('#guestModal').showModal();

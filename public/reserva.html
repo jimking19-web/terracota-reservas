@@ -35,7 +35,9 @@ async function load(){
   else if(r.status==='pending'&&r.mode==='request') head=`<div class="icon wait">✉</div><p class="eyebrow">Solicitud recibida</p><h1 class="display small">Gracias${r.name?', '+esc(r.name):''}</h1><p class="muted">Hemos bloqueado las fechas y te contactaremos en breve para confirmar la reserva y el pago.</p>`;
   else if(r.status==='pending') head=`<div class="icon wait">!</div><p class="eyebrow">Pago pendiente</p><h1 class="display small">Tu reserva aún no está pagada</h1><p class="muted">${p.get('pago')==='cancelado'?'Has cancelado el pago. ':''}Las fechas quedan guardadas unos minutos; si quieres, vuelve a la web y reserva de nuevo.</p>`;
   else head=`<div class="icon ko">×</div><p class="eyebrow">Reserva no completada</p><h1 class="display small">${r.status==='cancelled'?'Reserva cancelada':'El tiempo para pagar ha caducado'}</h1><p class="muted">No se ha realizado ningún cargo. Puedes volver a intentarlo cuando quieras.</p>`;
-  $('#card').innerHTML=head+`<div class="ref">${esc(r.ref)}</div>`+info+(r.invoice?`<a class="btn btn-terra" href="${esc(r.invoice)}" target="_blank" rel="noopener" style="margin:0 6px 10px">Descargar factura</a>`:'')+`<a class="btn btn-ghost" href="/">Volver a la web</a>`;
+  const depMsg={held:'retenida en tu tarjeta (no cobrada). Se liberará después de tu salida.',released:'liberada. ¡Gracias!',captured:'aplicada.'};
+  const dep=r.deposit>0&&r.status==='confirmed'?`<div class="box" style="margin-top:-8px"><div class="row"><span>Fianza ${eur(r.deposit)}</span><b>${depMsg[r.depositStatus]||(p.get('fianza')==='ok'?'recibida, ¡gracias!':'se retendrá en tu tarjeta el día antes de tu llegada.')}</b></div>${r.depositLink&&p.get('fianza')!=='ok'?`<a class="btn btn-terra btn-block" style="margin-top:10px" href="${esc(r.depositLink)}">Dejar la fianza ahora</a>`:''}</div>`:'';
+  $('#card').innerHTML=head+`<div class="ref">${esc(r.ref)}</div>`+info+dep+(r.invoice?`<a class="btn btn-terra" href="${esc(r.invoice)}" target="_blank" rel="noopener" style="margin:0 6px 10px">Descargar factura</a>`:'')+`<a class="btn btn-ghost" href="/">Volver a la web</a>`;
 }
 load();
 </script></body></html>

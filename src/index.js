@@ -2,7 +2,8 @@
 import { addDays, diffDays, isDate, todayMadrid } from './dates.js';
 import { calendar, getUnit, loadContext, night, quote, money } from './pricing.js';
 import { exportIcal, syncAll, syncFeed } from './ical.js';
-import { createCheckout, verifyWebhook } from './stripe.js';
+import { createCheckout, verifyWebhook, stripeRequest } from './stripe.js';
+import { runDeposits, placeHold, releaseHold, captureHold, depositCheckout, depositLink, releaseDate } from './deposit.js';
 import { guestEmail, ownerEmail, sendMail, mailEnabled } from './mail.js';
 import { ensureInvoice, invoiceReady, invoiceUrl, serveInvoice, sampleBooking, refToken, invoiceHtml } from './invoice.js';
 
@@ -120,6 +121,12 @@ async function confirmBooking(env, booking, paymentId, origin) {
   for (let d = booking.checkin; d < booking.checkout; d = addDays(d, 1)) if (!night(ctx, d).free) conflict.push(d);
   if (conflict.length) await db.prepare('UPDATE bookings SET internal_note = ? WHERE id = ?').bind(`⚠️ CONFLICTO: noches ocupadas por otra reserva/bloqueo (${conflict.join(', ')}). Revisar.`, booking.id).run();
   if (booking.promo_code) await db.prepare('UPDATE promo_codes SET uses = uses + 1 WHERE upper(code) = upper(?)').bind(booking.promo_code).run();
+  if (booking.deposit > 0 && paymentId && env.STRIPE_SECRET_KEY) {
+    try {
+      const pi = await stripeRequest(env, 'GET', `/payment_intents/${paymentId}`);
+      await db.prepare("UPDATE bookings SET stripe_customer = ?, stripe_pm = ?, deposit_status = coalesce(deposit_status, 'pending') WHERE id = ?").bind(pi.customer || null, pi.payment_method || null, booking.id).run();
+    } catch (e) { console.error('deposit card', e); }
+  }
   await notifyConfirmed(env, booking.id, origin, { owner: true, conflict: conflict.length ? `Noches ocupadas por otra reserva o bloqueo: ${conflict.join(', ')}. Revísalo.` : '' });
 }
 
@@ -199,11 +206,12 @@ async function publicApi(req, env, url, path) {
       ref: makeRef(), unit_id: unit.id, checkin: q.checkin, checkout: q.checkout, nights: q.nights, guests: q.guests,
       name: name.slice(0, 120), email: email.slice(0, 160), phone: phone.slice(0, 40), country: String(b.country || '').slice(0, 60),
       notes: String(b.notes || '').slice(0, 1000), total: q.total, breakdown: JSON.stringify(q.lines), promo_code: q.promo,
+      deposit: q.deposit || 0,
       billing: b.bill_name || b.bill_nif ? JSON.stringify({ name: String(b.bill_name || '').slice(0, 120), nif: String(b.bill_nif || '').slice(0, 30), address: String(b.bill_address || '').slice(0, 240) }) : null,
     };
-    const ins = await db.prepare(`INSERT INTO bookings (ref, unit_id, checkin, checkout, nights, guests, name, email, phone, country, notes, total, breakdown, promo_code, billing, status, source, expires_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', 'web', ?)`).bind(booking.ref, booking.unit_id, booking.checkin, booking.checkout, booking.nights, booking.guests,
-      booking.name, booking.email, booking.phone, booking.country, booking.notes, booking.total, booking.breakdown, booking.promo_code, booking.billing, sqlNow(expiresMs - Date.now())).run();
+    const ins = await db.prepare(`INSERT INTO bookings (ref, unit_id, checkin, checkout, nights, guests, name, email, phone, country, notes, total, breakdown, promo_code, billing, deposit, status, source, expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', 'web', ?)`).bind(booking.ref, booking.unit_id, booking.checkin, booking.checkout, booking.nights, booking.guests,
+      booking.name, booking.email, booking.phone, booking.country, booking.notes, booking.total, booking.breakdown, booking.promo_code, booking.billing, booking.deposit, sqlNow(expiresMs - Date.now())).run();
     booking.id = ins.meta.last_row_id;
 
     // Doble comprobación contra carreras: si otra reserva entró a la vez, anulamos esta
@@ -254,7 +262,9 @@ async function publicApi(req, env, url, path) {
     return json({ ok: true, ref: b.ref, unit: b.unit_name, checkin: b.checkin, checkout: b.checkout, nights: b.nights, guests: b.guests,
       name: (b.name || '').split(' ')[0], total: b.total, lines: JSON.parse(b.breakdown || '[]'),
       status: isExpired ? 'expired' : b.status, mode: b.stripe_session ? 'stripe' : 'request',
-      invoice: b.status === 'confirmed' && invoiceReady(await getSettings(db)) ? await invoiceUrl(db, url.origin, b.ref) : null });
+      invoice: b.status === 'confirmed' && invoiceReady(await getSettings(db)) ? await invoiceUrl(db, url.origin, b.ref) : null,
+      deposit: b.deposit || 0, depositStatus: b.deposit_status || null,
+      depositLink: b.deposit > 0 && b.status === 'confirmed' && !['held', 'captured', 'released'].includes(b.deposit_status) && b.checkout >= todayMadrid() ? await depositLink(db, url.origin, b.ref) : null });
   }
 
   if (path === '/api/stripe/webhook' && req.method === 'POST') {
@@ -263,6 +273,19 @@ async function publicApi(req, env, url, path) {
     const evt = JSON.parse(payload);
     const s = evt.data?.object || {};
     const ref = s.metadata?.ref || s.client_reference_id;
+    if (ref && s.metadata?.kind === 'deposit') {
+      // El huésped ha dejado la fianza él mismo (retención manual)
+      if (evt.type === 'checkout.session.completed' && s.payment_intent) {
+        const pi = await stripeRequest(env, 'GET', `/payment_intents/${s.payment_intent}`);
+        if (pi.status === 'requires_capture') {
+          const old = await db.prepare('SELECT id, deposit_pi, deposit_status FROM bookings WHERE ref = ?').bind(ref).first();
+          if (old?.deposit_status === 'held' && old.deposit_pi && old.deposit_pi !== pi.id) await releaseHold(env, old.deposit_pi);
+          await db.prepare("UPDATE bookings SET deposit_status = 'held', deposit_pi = ?, deposit_held_at = ?, stripe_customer = coalesce(?, stripe_customer), stripe_pm = coalesce(?, stripe_pm), deposit_note = ? WHERE ref = ?")
+            .bind(pi.id, sqlNow(), pi.customer || null, pi.payment_method || null, `Dejada por el huésped el ${todayMadrid()}`, ref).run();
+        }
+      }
+      return json({ received: true });
+    }
     if (ref) {
       const b = await db.prepare('SELECT * FROM bookings WHERE ref = ?').bind(ref).first();
       if (b) {
@@ -397,6 +420,44 @@ async function adminApi(req, env, url, path) {
     const r = await notifyConfirmed(env, Number(m[1]), url.origin);
     return r.ok ? json({ ok: true }) : bad('No se pudo enviar: ' + r.error);
   }
+  if ((m = path.match(/^\/api\/admin\/bookings\/(\d+)\/deposit$/)) && req.method === 'POST') {
+    const id = Number(m[1]);
+    const bk = await db.prepare('SELECT * FROM bookings WHERE id = ?').bind(id).first();
+    if (!bk) return bad('No encontrada', 404);
+    const a = b.action;
+    if (a === 'set') {
+      const amt = cents(b.amount) || 0;
+      if (bk.deposit_status === 'held' || bk.deposit_status === 'captured') return bad('La fianza ya está retenida; libérala antes de cambiar el importe');
+      await db.prepare("UPDATE bookings SET deposit = ?, deposit_status = CASE WHEN ? > 0 THEN 'pending' ELSE NULL END, deposit_note = NULL WHERE id = ?").bind(amt, amt, id).run();
+      return json({ ok: true });
+    }
+    if (a === 'link') return json({ ok: true, url: await depositLink(db, url.origin, bk.ref) });
+    if (a === 'keep') { await db.prepare('UPDATE bookings SET deposit_keep = ? WHERE id = ?').bind(b.keep ? 1 : 0, id).run(); return json({ ok: true }); }
+    if (!env.STRIPE_SECRET_KEY) return bad('Stripe no está conectado');
+    if (a === 'hold') {
+      if (bk.deposit_status === 'held') return bad('Ya está retenida');
+      const r = await placeHold(env, bk);
+      if (!r.ok) { await db.prepare("UPDATE bookings SET deposit_status = 'pending', deposit_note = ? WHERE id = ?").bind('Error al retener: ' + r.error, id).run(); return bad('No se pudo retener: ' + r.error + '. Envíale el enlace para que la deje él.'); }
+      await db.prepare("UPDATE bookings SET deposit_status = 'held', deposit_pi = ?, deposit_held_at = ?, deposit_note = ? WHERE id = ?").bind(r.pi, sqlNow(), `Retenida a mano el ${todayMadrid()}`, id).run();
+      return json({ ok: true });
+    }
+    if (bk.deposit_status !== 'held' || !bk.deposit_pi) return bad('No hay ninguna fianza retenida');
+    if (a === 'release') {
+      const r = await releaseHold(env, bk.deposit_pi);
+      if (!r.ok) return bad(r.error);
+      await db.prepare("UPDATE bookings SET deposit_status = 'released', deposit_note = ? WHERE id = ?").bind(`Liberada a mano el ${todayMadrid()}`, id).run();
+      return json({ ok: true });
+    }
+    if (a === 'capture') {
+      const amt = cents(b.amount);
+      if (!amt || amt <= 0 || amt > bk.deposit) return bad(`Importe no válido (máximo ${money(bk.deposit)})`);
+      const r = await captureHold(env, bk.deposit_pi, amt);
+      if (!r.ok) return bad(r.error);
+      await db.prepare("UPDATE bookings SET deposit_status = 'captured', deposit_captured = ?, deposit_note = ? WHERE id = ?").bind(amt, `Cobrados ${money(amt)} el ${todayMadrid()}${b.reason ? ': ' + String(b.reason).slice(0, 200) : ''}`, id).run();
+      return json({ ok: true });
+    }
+    return bad('Acción no válida');
+  }
   if ((m = path.match(/^\/api\/admin\/bookings\/(\d+)\/invoice$/)) && req.method === 'POST') {
     const site = await getSettings(db);
     if (!invoiceReady(site)) return bad('Completa primero los datos de facturación en «Pagos y cuenta»');
@@ -510,6 +571,10 @@ async function adminApi(req, env, url, path) {
     }
     if (!sets.length) return json({ ok: true });
     await db.prepare(`UPDATE bookings SET ${sets.join(', ')} WHERE id = ?`).bind(...args, id).run();
+    if (b.status === 'cancelled' && cur.deposit_status === 'held' && cur.deposit_pi) {
+      await releaseHold(env, cur.deposit_pi);
+      await db.prepare("UPDATE bookings SET deposit_status = 'released', deposit_note = ? WHERE id = ?").bind(`Liberada al cancelar el ${todayMadrid()}`, id).run();
+    }
     if (b.status === 'confirmed' && cur.status !== 'confirmed' && b.notify && cur.email && cur.source !== 'bloqueo' && mailEnabled(env)) {
       const r = await notifyConfirmed(env, id, url.origin);
       return json({ ok: true, mailed: !!r.ok, mailError: r.ok ? undefined : r.error });
@@ -521,8 +586,9 @@ async function adminApi(req, env, url, path) {
   const unitFields = { name: 's', slug: 's', summary: 's', description: 's', max_guests: 'i', base_guests: 'i', bedrooms: 'i', beds: 'i', bathrooms: 'i',
     base_price: 'c', weekend_price: 'c', weekend_nights: 's', min_nights: 'i', max_nights: 'i', cleaning_fee: 'c', extra_guest_fee: 'c',
     weekly_discount: 'f', monthly_discount: 'f', stay_discounts: 'j', last_minute_days: 'i', last_minute_discount: 'f', early_bird_days: 'i', early_bird_discount: 'f',
-    min_advance_days: 'i', max_advance_days: 'i', checkin_days: 's', active: 'i', sort: 'i' };
-  const conv = (t, v) => t === 'j' ? JSON.stringify((Array.isArray(v) ? v : []).map(x => ({ nights: parseInt(x.nights, 10), pct: Number(String(x.pct).replace(',', '.')) })).filter(x => x.nights > 0 && x.pct > 0 && x.pct <= 90)) : t === 'c' ? cents(v) : t === 'i' ? intOrNull(v) : t === 'f' ? (v === '' || v == null ? 0 : Number(String(v).replace(',', '.'))) : String(v ?? '');
+    min_advance_days: 'i', max_advance_days: 'i', checkin_days: 's', active: 'i', sort: 'i',
+    deposit_amount: 'c', deposit_when: 's', deposit_min_nights: 'i', deposit_release_days: 'i', deposit_dates: 'r' };
+  const conv = (t, v) => t === 'r' ? JSON.stringify((Array.isArray(v) ? v : []).filter(x => isDate(x.from) && isDate(x.to) && x.from <= x.to).map(x => ({ from: x.from, to: x.to, label: String(x.label || '').slice(0, 60) }))) : t === 'j' ? JSON.stringify((Array.isArray(v) ? v : []).map(x => ({ nights: parseInt(x.nights, 10), pct: Number(String(x.pct).replace(',', '.')) })).filter(x => x.nights > 0 && x.pct > 0 && x.pct <= 90)) : t === 'c' ? cents(v) : t === 'i' ? intOrNull(v) : t === 'f' ? (v === '' || v == null ? 0 : Number(String(v).replace(',', '.'))) : String(v ?? '');
   if (path === '/api/admin/units' && req.method === 'POST') {
     const slug = (b.slug || b.name || 'suite').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'suite-' + Date.now();
     const r = await db.prepare('INSERT INTO units (slug, name, ical_token, base_price) VALUES (?, ?, ?, ?)').bind(slug, b.name || 'Nueva suite', randomToken(16), cents(b.base_price) ?? 9000).run();
@@ -534,7 +600,9 @@ async function adminApi(req, env, url, path) {
       let v = conv(t, b[k]);
       if (['base_price', 'min_nights', 'max_nights', 'max_guests', 'base_guests'].includes(k) && v == null) return bad(`El campo ${k} es obligatorio`);
       if (['cleaning_fee', 'extra_guest_fee'].includes(k) && v == null) v = 0;
-      if (['last_minute_days', 'early_bird_days', 'min_advance_days'].includes(k) && v == null) v = 0;
+      if (['last_minute_days', 'early_bird_days', 'min_advance_days', 'deposit_amount', 'deposit_min_nights'].includes(k) && v == null) v = 0;
+      if (k === 'deposit_release_days' && v == null) v = 2;
+      if (k === 'deposit_when' && !['never', 'always', 'rules'].includes(v)) v = 'never';
       sets.push(`${k} = ?`); args.push(v);
     }
     if (sets.length) await db.prepare(`UPDATE units SET ${sets.join(', ')} WHERE id = ?`).bind(...args, Number(m[1])).run();
@@ -693,6 +761,16 @@ export default {
         if (p.src) return env.ASSETS.fetch(new Request(new URL(p.src, url), req));
         return new Response(new Uint8Array(p.data), { headers: { 'Content-Type': p.mime, 'Cache-Control': 'public, max-age=31536000, immutable' } });
       }
+      if ((m = path.match(/^\/fianza\/(TS-[A-Z0-9]{6})$/))) {
+        env = await withConfig(env);
+        if (url.searchParams.get('t') !== (await refToken(env.DB, 'fianza-' + m[1]))) return new Response('Enlace no válido', { status: 403 });
+        const bk = await env.DB.prepare('SELECT * FROM bookings WHERE ref = ?').bind(m[1]).first();
+        const done = new Response(null, { status: 303, headers: { Location: `/reserva?ref=${m[1]}` } });
+        if (!bk || bk.status !== 'confirmed' || !(bk.deposit > 0) || ['held', 'captured', 'released'].includes(bk.deposit_status) || !env.STRIPE_SECRET_KEY) return done;
+        const site = await getSettings(env.DB);
+        const sess = await depositCheckout(env, bk, url.origin, site.site_name);
+        return new Response(null, { status: 303, headers: { Location: sess.url } });
+      }
       if (path === '/factura/muestra') {
         const site = await getSettings(env.DB);
         if (url.searchParams.get('t') !== (await refToken(env.DB, 'muestra')) || !invoiceReady(site)) return new Response('Enlace no válido', { status: 403 });
@@ -715,6 +793,10 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(Promise.all([syncAll(env.DB), expirePending(env.DB)]));
+    ctx.waitUntil((async () => {
+      await Promise.all([syncAll(env.DB), expirePending(env.DB)]);
+      const cfg = await withConfig(env);
+      try { await runDeposits(cfg, await getSettings(env.DB)); } catch (e) { console.error('fianzas', e); }
+    })());
   },
 };

@@ -17,12 +17,23 @@ export async function stripeRequest(env, method, path, params) {
     body: params ? form(params) : undefined,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Error de Stripe');
+  if (!res.ok) {
+    const e = new Error(data.error?.message || 'Error de Stripe');
+    e.code = data.error?.code || data.error?.decline_code || '';
+    e.paymentIntent = data.error?.payment_intent?.id || '';
+    throw e;
+  }
   return data;
 }
 
 export async function createCheckout(env, { booking, unit, origin, siteName, expiresAt }) {
+  const deposit = booking.deposit > 0;
+  const eur = c => (c / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: c % 100 ? 2 : 0 });
   return stripeRequest(env, 'POST', '/checkout/sessions', {
+    ...(deposit ? {
+      customer_creation: 'always',
+      custom_text: { submit: { message: `Guardamos tu tarjeta de forma segura para la fianza de ${eur(booking.deposit)}: se retiene (sin cobrarse) el día antes de tu llegada y se libera tras la salida.` } },
+    } : {}),
     mode: 'payment',
     customer_email: booking.email,
     locale: 'es',
@@ -31,7 +42,7 @@ export async function createCheckout(env, { booking, unit, origin, siteName, exp
     success_url: `${origin}/reserva?ref=${booking.ref}&pago=ok`,
     cancel_url: `${origin}/reserva?ref=${booking.ref}&pago=cancelado`,
     metadata: { ref: booking.ref, unit: unit.slug },
-    payment_intent_data: { description: `${siteName} · ${booking.checkin} → ${booking.checkout} · ${booking.ref}`, metadata: { ref: booking.ref } },
+    payment_intent_data: { description: `${siteName} · ${booking.checkin} → ${booking.checkout} · ${booking.ref}`, metadata: { ref: booking.ref }, ...(deposit ? { setup_future_usage: 'off_session' } : {}) },
     line_items: { 0: { quantity: 1, price_data: {
       currency: 'eur', unit_amount: booking.total,
       product_data: { name: `${unit.name} · ${booking.nights} ${booking.nights === 1 ? 'noche' : 'noches'}`, description: `Entrada ${booking.checkin} · Salida ${booking.checkout} · ${booking.guests} huéspedes` },

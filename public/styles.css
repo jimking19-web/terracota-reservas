@@ -277,3 +277,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--t
 .bill { border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; background: var(--cream); }
 .bill summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink-2); }
 .bill[open] summary { margin-bottom: 10px; }
+
+/* Fianza */
+.deposit-note { margin-top: 12px; background: var(--terra-l); color: var(--ink-2); border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
+.deposit-note b { color: var(--ink); }
+.trip .deposit-note.full { flex-basis: 100%; margin-top: 8px; }

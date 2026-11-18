@@ -121,6 +121,7 @@ export function guestEmail(site, unit, b, { origin, heroUrl, bookingUrl, invoice
   ${linesTable(b, isRequest ? 'Total' : (b.paid ? 'Total pagado' : 'Total'))}
   ${!isRequest && b.paid ? `<div style="font-family:${SANS};font-size:13px;color:#3f7a3a;margin-top:8px">✓ Pagado con tarjeta${b.invoice_no ? ` · Factura ${esc(b.invoice_no)}` : ''}</div>` : ''}
 </td></tr>
+${b.deposit > 0 && !isRequest ? `<tr><td class="px" style="background:#fff;padding:16px 44px 0"><div style="background:${C.terraL};border-radius:14px;padding:14px 16px;font-family:${SANS};font-size:14px;line-height:1.55;color:${C.ink2}"><b style="color:${C.ink}">Fianza de ${money(b.deposit)}</b> · no se cobra. Se retiene en tu tarjeta el día antes de tu llegada y se libera automáticamente unos días después de la salida si todo está bien.</div></td></tr>` : ''}
 <tr><td class="px" align="center" style="background:#fff;padding:22px 44px 30px">
   ${bookingUrl ? btn(bookingUrl, 'Ver mi reserva') : ''}${invoiceUrl ? btn(invoiceUrl, 'Descargar factura', false) : ''}
 </td></tr>

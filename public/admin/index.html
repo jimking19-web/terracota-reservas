@@ -137,6 +137,24 @@
         <p class="hint">Los extras aparecen al reservar en tu web, se suman al total y se cobran con el pago. No llevan descuentos.</p>
       </form>
 
+      <form class="card" id="depositForm">
+        <div class="card-h"><h2>Fianza</h2><button class="btn primary">Guardar</button></div>
+        <div class="fgrid">
+          <label>Importe €<input name="deposit_amount" inputmode="decimal" placeholder="120"></label>
+          <label class="span2">¿Cuándo se pide?<select name="deposit_when">
+            <option value="never">Nunca</option><option value="always">En todas las reservas</option><option value="rules">Solo en estas condiciones…</option></select></label>
+          <label>Liberar a los … días de la salida<input name="deposit_release_days" type="number" min="0" max="5" value="2"></label>
+        </div>
+        <div id="depositRules">
+          <div class="fgrid" style="margin-top:12px">
+            <label>Estancias de … noches o más<input name="deposit_min_nights" type="number" min="0" placeholder="7"><small class="muted">0 = no depende de las noches</small></label>
+          </div>
+          <div class="field" style="margin-top:12px"><span class="small" style="font-weight:700;color:var(--ink2)">…o si la estancia toca alguna de estas fechas</span>
+            <div id="depRanges"></div><button type="button" class="linkbtn" id="addDepRange">+ Añadir fechas</button></div>
+        </div>
+        <p class="hint">La fianza <b>no se cobra</b>: al pagar la reserva se guarda la tarjeta y el día antes de la llegada se retiene el importe. Si la estancia es larga, la retención se renueva sola (los bancos la anulan a los 7 días). Se libera sola tras la salida; si hay daños, cóbrala (toda o parte) desde la reserva. Si el banco no deja retenerla, el huésped recibe un enlace para dejarla él y te aviso.</p>
+      </form>
+
       <div class="card">
         <div class="card-h"><h2>Simulador de precio</h2></div>
         <div class="sim">
