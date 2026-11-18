@@ -579,8 +579,9 @@ export default {
       }
       let m;
       if ((m = path.match(/^\/foto\/(\d+)(?:\.\w+)?$/))) {
-        const p = await env.DB.prepare('SELECT mime, data FROM photos WHERE id = ?').bind(Number(m[1])).first();
+        const p = await env.DB.prepare('SELECT mime, data, src FROM photos WHERE id = ?').bind(Number(m[1])).first();
         if (!p) return new Response('No encontrada', { status: 404 });
+        if (p.src) return env.ASSETS.fetch(new Request(new URL(p.src, url), req));
         return new Response(new Uint8Array(p.data), { headers: { 'Content-Type': p.mime, 'Cache-Control': 'public, max-age=31536000, immutable' } });
       }
       if ((m = path.match(/^\/ical\/([a-f0-9]{16,64})\.ics$/))) {

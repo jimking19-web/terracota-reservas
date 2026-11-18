@@ -126,7 +126,8 @@ CREATE TABLE IF NOT EXISTS photos (
   mime TEXT NOT NULL,
   data BLOB NOT NULL,
   caption TEXT,
-  sort INTEGER NOT NULL DEFAULT 0
+  sort INTEGER NOT NULL DEFAULT 0,
+  src TEXT                  -- si tiene valor, la foto se sirve desde /public (p. ej. /img/fotos/x.jpg)
 );
 
 CREATE TABLE IF NOT EXISTS settings (
