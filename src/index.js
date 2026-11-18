@@ -439,9 +439,9 @@ async function adminApi(req, env, url, path) {
   // Unidades (configuración de precios base)
   const unitFields = { name: 's', slug: 's', summary: 's', description: 's', max_guests: 'i', base_guests: 'i', bedrooms: 'i', beds: 'i', bathrooms: 'i',
     base_price: 'c', weekend_price: 'c', weekend_nights: 's', min_nights: 'i', max_nights: 'i', cleaning_fee: 'c', extra_guest_fee: 'c',
-    weekly_discount: 'f', monthly_discount: 'f', last_minute_days: 'i', last_minute_discount: 'f', early_bird_days: 'i', early_bird_discount: 'f',
+    weekly_discount: 'f', monthly_discount: 'f', stay_discounts: 'j', last_minute_days: 'i', last_minute_discount: 'f', early_bird_days: 'i', early_bird_discount: 'f',
     min_advance_days: 'i', max_advance_days: 'i', checkin_days: 's', active: 'i', sort: 'i' };
-  const conv = (t, v) => t === 'c' ? cents(v) : t === 'i' ? intOrNull(v) : t === 'f' ? (v === '' || v == null ? 0 : Number(String(v).replace(',', '.'))) : String(v ?? '');
+  const conv = (t, v) => t === 'j' ? JSON.stringify((Array.isArray(v) ? v : []).map(x => ({ nights: parseInt(x.nights, 10), pct: Number(String(x.pct).replace(',', '.')) })).filter(x => x.nights > 0 && x.pct > 0 && x.pct <= 90)) : t === 'c' ? cents(v) : t === 'i' ? intOrNull(v) : t === 'f' ? (v === '' || v == null ? 0 : Number(String(v).replace(',', '.'))) : String(v ?? '');
   if (path === '/api/admin/units' && req.method === 'POST') {
     const slug = (b.slug || b.name || 'suite').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'suite-' + Date.now();
     const r = await db.prepare('INSERT INTO units (slug, name, ical_token, base_price) VALUES (?, ?, ?, ?)').bind(slug, b.name || 'Nueva suite', randomToken(16), cents(b.base_price) ?? 9000).run();

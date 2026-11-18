@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS units (
   extra_guest_fee INTEGER NOT NULL DEFAULT 0,      -- por persona extra y noche
   weekly_discount REAL NOT NULL DEFAULT 0,         -- % a partir de 7 noches
   monthly_discount REAL NOT NULL DEFAULT 0,        -- % a partir de 28 noches
+  stay_discounts TEXT NOT NULL DEFAULT '[]',       -- tramos [{nights, pct}] p. ej. 2+ noches 25 %
   last_minute_days INTEGER NOT NULL DEFAULT 0,
   last_minute_discount REAL NOT NULL DEFAULT 0,
   early_bird_days INTEGER NOT NULL DEFAULT 0,

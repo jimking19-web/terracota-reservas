@@ -104,6 +104,8 @@
           <label>Reservar con hasta (días vista)<input name="max_advance_days" type="number" min="30"></label>
         </div>
         <h3>Descuentos automáticos</h3>
+        <div class="field" style="margin-bottom:12px"><span class="small" style="font-weight:700;color:var(--ink2)">Descuento por número de noches (se aplica el tramo más alto que cumpla)</span>
+          <div id="tiers"></div><button type="button" class="linkbtn" id="addTier">+ Añadir tramo</button></div>
         <div class="fgrid">
           <label>Semanal (7+ noches) %<input name="weekly_discount" inputmode="decimal"></label>
           <label>Mensual (28+ noches) %<input name="monthly_discount" inputmode="decimal"></label>

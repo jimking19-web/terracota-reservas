@@ -390,6 +390,15 @@ function renderTarifas() {
   for (const k of ['base_price', 'weekend_price', 'cleaning_fee', 'extra_guest_fee']) f[k].value = toEuros(u[k]);
   for (const k of ['min_nights', 'max_nights', 'max_guests', 'base_guests', 'min_advance_days', 'max_advance_days', 'last_minute_days', 'early_bird_days']) f[k].value = u[k] ?? '';
   for (const k of ['weekly_discount', 'monthly_discount', 'last_minute_discount', 'early_bird_discount']) f[k].value = u[k] ? String(u[k]).replace('.', ',') : '';
+  let tiers = []; try { tiers = JSON.parse(u.stay_discounts || '[]'); } catch {}
+  const drawTiers = () => {
+    $('#tiers').innerHTML = tiers.map((t, i) => `<div class="tier">A partir de <input type="number" min="1" data-ti="${i}" data-k="nights" value="${t.nights}"> noches → <input inputmode="decimal" data-ti="${i}" data-k="pct" value="${String(t.pct).replace('.', ',')}"> % menos <button type="button" class="linkbtn" data-trm="${i}">Quitar</button></div>`).join('') || '<p class="muted small">Sin tramos</p>';
+    $$('#tiers input').forEach(inp => inp.oninput = () => { tiers[inp.dataset.ti][inp.dataset.k] = inp.value; });
+    $$('[data-trm]').forEach(b => b.onclick = () => { tiers.splice(Number(b.dataset.trm), 1); drawTiers(); });
+  };
+  $('#addTier').onclick = () => { tiers.push({ nights: 2, pct: 10 }); drawTiers(); };
+  drawTiers();
+  f._tiers = () => tiers;
   daysPick(f.querySelector('[data-name="weekend_nights"]'), String(u.weekend_nights).split(',').filter(Boolean));
   daysPick(f.querySelector('[data-name="checkin_days"]'), String(u.checkin_days).split(',').filter(x => x !== ''));
   const seasons = S.seasons.filter(s => s.unit_id === u.id);
@@ -406,6 +415,7 @@ $('#unitForm').onsubmit = async e => {
   const f = e.target; const d = Object.fromEntries(new FormData(f).entries());
   d.weekend_nights = daysValue(f.querySelector('[data-name="weekend_nights"]')).join(',');
   d.checkin_days = daysValue(f.querySelector('[data-name="checkin_days"]')).join(',');
+  d.stay_discounts = f._tiers ? f._tiers() : [];
   if (!d.checkin_days) return toast('Elige al menos un día de entrada', true);
   if (Number(d.base_guests) > Number(d.max_guests)) return toast('Los huéspedes incluidos no pueden superar el máximo', true);
   if (await act(api('/api/admin/units/' + unitId, 'PUT', d), 'Tarifas guardadas')) { await refresh(); renderTarifas(); }

@@ -112,8 +112,13 @@ export async function quote(db, unit, { checkin, checkout, guests, promo }, opts
     discounts += amt;
     lines.push({ type: 'discount', label: `${label} (−${p}%)`, amount: amt });
   };
-  if (unit.monthly_discount > 0 && nights >= 28) pct('Descuento estancia mensual', unit.monthly_discount);
-  else if (unit.weekly_discount > 0 && nights >= 7) pct('Descuento estancia semanal', unit.weekly_discount);
+  // Descuento por duración: se aplica el mejor tramo que cumpla (por noches, semanal o mensual)
+  const tiers = [];
+  try { for (const t of JSON.parse(unit.stay_discounts || '[]')) if (t.nights > 0 && t.pct > 0) tiers.push({ n: Number(t.nights), p: Number(t.pct), label: `Descuento ${t.nights}+ noches` }); } catch {}
+  if (unit.weekly_discount > 0) tiers.push({ n: 7, p: unit.weekly_discount, label: 'Descuento estancia semanal' });
+  if (unit.monthly_discount > 0) tiers.push({ n: 28, p: unit.monthly_discount, label: 'Descuento estancia mensual' });
+  const best = tiers.filter(t => nights >= t.n).sort((a, b) => b.p - a.p || b.n - a.n)[0];
+  if (best) pct(best.label, best.p);
   if (unit.last_minute_days > 0 && ahead <= unit.last_minute_days) pct('Oferta última hora', unit.last_minute_discount);
   else if (unit.early_bird_days > 0 && ahead >= unit.early_bird_days) pct('Reserva anticipada', unit.early_bird_discount);
 
