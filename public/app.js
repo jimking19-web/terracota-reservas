@@ -28,7 +28,7 @@ function iconFor(text) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
 }
 
-const state = { site: null, unit: null, cal: new Map(), calFrom: null, monthOffset: 0, checkin: null, checkout: null, guests: 2, promo: '', quote: null, today: null, picking: 'checkin' };
+const state = { site: null, unit: null, cal: new Map(), calFrom: null, monthOffset: 0, checkin: null, checkout: null, guests: 2, promo: '', extras: {}, quote: null, today: null, picking: 'checkin' };
 
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json' }, body: opts.body ? JSON.stringify(opts.body) : undefined });
@@ -211,7 +211,7 @@ async function getQuote() {
   if (!state.checkin || !state.checkout) return;
   const seq = ++quoteSeq;
   $('#bookBtn').disabled = true; $('#bookBtn').textContent = 'Calculando…';
-  const q = await api('/api/quote', { method: 'POST', body: { unit: state.unit.slug, checkin: state.checkin, checkout: state.checkout, guests: state.guests, promo: state.promo } });
+  const q = await api('/api/quote', { method: 'POST', body: { unit: state.unit.slug, checkin: state.checkin, checkout: state.checkout, guests: state.guests, promo: state.promo, extras: state.extras } });
   if (seq !== quoteSeq) return;
   state.quote = q;
   renderSummary();
@@ -235,6 +235,7 @@ function renderSummary() {
   pm.className = 'promo-msg';
   pm.textContent = '';
   if (q?.ok && state.promo) { if (q.promo) { pm.textContent = `Código ${q.promo} aplicado`; pm.classList.add('ok'); } else if (q.promoError) { pm.textContent = q.promoError; pm.classList.add('err'); } }
+  renderExtras(q);
   if (q?.ok) {
     $('#sumLines').innerHTML = q.lines.map(l => `<div class="row ${l.type}"><span>${esc(l.label)}</span><span>${eur(l.amount, 2)}</span></div>`).join('')
       + `<div class="row total"><span>Total</span><span>${eur(q.total, 2)}</span></div>`
@@ -245,6 +246,30 @@ function renderSummary() {
     btn.disabled = true;
     btn.textContent = !state.checkin ? 'Selecciona fechas' : !state.checkout ? 'Selecciona la salida' : 'Fechas no disponibles';
   }
+}
+
+function renderExtras(q) {
+  const box = $('#sumExtras');
+  const list = q?.ok ? (q.extras || []) : [];
+  box.hidden = !list.length;
+  if (!list.length) { box.innerHTML = ''; return; }
+  const price = x => `${eur(x.price, x.price % 100 ? 2 : 0)}${x.per === 'night' ? ' / noche' : ''}`;
+  box.innerHTML = '<h4>Añade a tu estancia</h4>' + list.map(x => `<div class="extra">
+      <div class="extra-t"><b>${esc(x.name)}</b>${x.description ? `<small>${esc(x.description)}</small>` : ''}<span class="extra-p">${price(x)}</span></div>
+      ${x.max_qty > 1
+        ? `<div class="stepper sm"><button type="button" data-x="${x.id}" data-d="-1" aria-label="Quitar">−</button><b>${x.qty}</b><button type="button" data-x="${x.id}" data-d="1" aria-label="Añadir">+</button></div>`
+        : `<label class="switch"><input type="checkbox" data-x="${x.id}" ${x.qty ? 'checked' : ''}><span></span></label>`}
+    </div>`).join('');
+  box.querySelectorAll('[data-x]').forEach(el => {
+    const ev = el.type === 'checkbox' ? 'change' : 'click';
+    el.addEventListener(ev, () => {
+      const x = list.find(i => i.id === Number(el.dataset.x));
+      const cur = Number(state.extras[x.id] || 0);
+      const next = el.type === 'checkbox' ? (el.checked ? 1 : 0) : Math.max(0, Math.min(x.max_qty, cur + Number(el.dataset.d)));
+      if (next) state.extras[x.id] = next; else delete state.extras[x.id];
+      getQuote();
+    });
+  });
 }
 
 // ---------- reserva ----------
@@ -269,7 +294,7 @@ async function submitBooking(e) {
   if (!data.accept) return (err.textContent = 'Debes aceptar las condiciones');
   const btn = $('#payBtn'); const label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Procesando…'; err.textContent = '';
-  const r = await api('/api/book', { method: 'POST', body: { ...data, unit: state.unit.slug, checkin: state.checkin, checkout: state.checkout, guests: state.guests, promo: state.promo, expectedTotal: state.quote.total } });
+  const r = await api('/api/book', { method: 'POST', body: { ...data, unit: state.unit.slug, checkin: state.checkin, checkout: state.checkout, guests: state.guests, promo: state.promo, extras: state.extras, expectedTotal: state.quote.total } });
   if (r.ok && r.redirect) { location.href = r.redirect; return; }
   btn.disabled = false; btn.textContent = label;
   err.textContent = r.error || 'No se pudo completar la reserva';

@@ -131,6 +131,21 @@ CREATE TABLE IF NOT EXISTS photos (
   src TEXT                  -- si tiene valor, la foto se sirve desde /public (p. ej. /img/fotos/x.jpg)
 );
 
+-- Extras que el huésped puede añadir al reservar (leña, salida tarde…)
+CREATE TABLE IF NOT EXISTS extras (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  unit_id INTEGER,                          -- NULL = todos los alojamientos
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  price INTEGER NOT NULL DEFAULT 0,         -- céntimos
+  per TEXT NOT NULL DEFAULT 'stay',         -- stay = por estancia · night = por noche
+  max_qty INTEGER NOT NULL DEFAULT 1,       -- 1 = sí/no · >1 = el huésped elige cantidad
+  checkout_days TEXT NOT NULL DEFAULT '',   -- solo si la salida cae en estos días (0=dom … 6=sáb); vacío = siempre
+  needs_free_checkout INTEGER NOT NULL DEFAULT 0, -- solo si nadie entra el día de salida (p. ej. salida tarde)
+  active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT

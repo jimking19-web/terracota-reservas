@@ -122,6 +122,21 @@
         <div class="table-wrap"><table class="tbl" id="seasonTable"></table></div>
       </div>
 
+      <form class="card" id="extraForm">
+        <div class="card-h"><h2 id="extraTitle">Extras al reservar</h2><span><button type="button" class="btn" id="extraCancel" hidden>Cancelar</button> <button class="btn primary" id="extraSave">Añadir extra</button></span></div>
+        <div class="fgrid">
+          <label>Nombre<input name="name" required placeholder="Leña extra"></label>
+          <label>Precio €<input name="price" inputmode="decimal" required placeholder="10"></label>
+          <label class="span2">Descripción (la ve el huésped)<input name="description" placeholder="Saco de leña de olivo para la chimenea"></label>
+          <label>Se cobra<select name="per"><option value="stay">Una vez por estancia</option><option value="night">Por cada noche</option></select></label>
+          <label>Cantidad máxima<input name="max_qty" type="number" min="1" max="20" value="1"><small class="muted">1 = sí/no · más de 1 = el huésped elige cuántos</small></label>
+          <div class="field span2"><span>Solo si el día de salida es… (sin marcar = cualquier día)</span><div class="days-pick" data-name="extra_checkout_days" data-labels="day"></div></div>
+          <label class="chk span2"><input type="checkbox" name="needs_free_checkout"> Solo si nadie entra ese mismo día (para la salida tarde)</label>
+        </div>
+        <div class="table-wrap" style="margin-top:14px"><table class="tbl" id="extraTable"></table></div>
+        <p class="hint">Los extras aparecen al reservar en tu web, se suman al total y se cobran con el pago. No llevan descuentos.</p>
+      </form>
+
       <div class="card">
         <div class="card-h"><h2>Simulador de precio</h2></div>
         <div class="sim">

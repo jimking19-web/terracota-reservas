@@ -63,7 +63,7 @@ export function money(c) {
 }
 
 // Validación y cálculo completo de una estancia
-export async function quote(db, unit, { checkin, checkout, guests, promo }, opts = {}) {
+export async function quote(db, unit, { checkin, checkout, guests, promo, extras: wanted }, opts = {}) {
   const errors = [];
   if (!isDate(checkin) || !isDate(checkout)) return { ok: false, error: 'Fechas no válidas' };
   const nights = diffDays(checkin, checkout);
@@ -145,12 +145,46 @@ export async function quote(db, unit, { checkin, checkout, guests, promo }, opts
   }
 
   if (unit.cleaning_fee > 0) lines.push({ type: 'cleaning', label: 'Limpieza', amount: unit.cleaning_fee });
+
+  // Extras: solo los disponibles para estas fechas; nunca llevan descuento
+  const extras = await availableExtras(db, unit, checkout);
+  const sel = wanted && typeof wanted === 'object' ? wanted : {};
+  for (const x of extras) {
+    const qty = Math.max(0, Math.min(x.max_qty, parseInt(sel[x.id] || 0, 10) || 0));
+    x.qty = qty;
+    if (!qty) continue;
+    const mult = x.per === 'night' ? nights : 1;
+    const parts = [qty > 1 ? `${qty} × ` : '', x.name, x.per === 'night' ? ` (${nights} noches)` : ''].join('');
+    lines.push({ type: 'extra', label: parts, amount: x.price * qty * mult, extra_id: x.id, qty });
+  }
   const total = lines.reduce((a, l) => a + l.amount, 0);
   return {
     ok: true, unit: unit.slug, checkin, checkout, nights, guests, lines, total,
     totalFormatted: money(total), promo: promoApplied, promoError,
+    extras: extras.map(x => ({ id: x.id, name: x.name, description: x.description, price: x.price, per: x.per, max_qty: x.max_qty, qty: x.qty })),
     nightly: list.map(n => ({ date: n.date, price: n.price, source: n.source })),
   };
+}
+
+// Extras activos que se pueden ofrecer para una salida concreta
+export async function availableExtras(db, unit, checkout) {
+  const rows = (await db.prepare('SELECT * FROM extras WHERE active = 1 AND (unit_id IS NULL OR unit_id = ?) ORDER BY sort, id').bind(unit.id).all()).results;
+  if (!rows.length) return [];
+  let checkoutTaken = null;
+  const out = [];
+  for (const x of rows) {
+    const days = String(x.checkout_days || '').split(',').filter(v => v !== '').map(Number);
+    if (days.length && !days.includes(weekday(checkout))) continue;
+    if (x.needs_free_checkout) {
+      if (checkoutTaken === null) {
+        const ctx = await loadContext(db, unit, checkout, addDays(checkout, 1));
+        checkoutTaken = ctx.busy.has(checkout);
+      }
+      if (checkoutTaken) continue;
+    }
+    out.push({ ...x });
+  }
+  return out;
 }
 
 // Calendario público: estado y precio de cada día

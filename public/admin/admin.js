@@ -386,6 +386,7 @@ function bookingForm({ checkin = '', checkout = '' }) {
 
 // ---------- TARIFAS ----------
 function renderTarifas() {
+  renderExtras();
   const u = unit(); const f = $('#unitForm');
   for (const k of ['base_price', 'weekend_price', 'cleaning_fee', 'extra_guest_fee']) f[k].value = toEuros(u[k]);
   for (const k of ['min_nights', 'max_nights', 'max_guests', 'base_guests', 'min_advance_days', 'max_advance_days', 'last_minute_days', 'early_bird_days']) f[k].value = u[k] ?? '';
@@ -466,6 +467,42 @@ $('#promoForm').onsubmit = async e => {
   e.preventDefault();
   const d = Object.fromEntries(new FormData(e.target).entries());
   if (await act(api('/api/admin/promos', 'POST', d), 'Código creado')) { e.target.reset(); await refresh(); renderPromos(); }
+};
+
+// ---------- EXTRAS ----------
+let extraEditing = null;
+const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+function renderExtras() {
+  const list = S.extras || [];
+  const f = $('#extraForm');
+  const x = list.find(e => e.id === extraEditing) || null;
+  if (!x) extraEditing = null;
+  f.name.value = x?.name || ''; f.price.value = x ? toEuros(x.price) : ''; f.description.value = x?.description || '';
+  f.per.value = x?.per || 'stay'; f.max_qty.value = x?.max_qty || 1; f.needs_free_checkout.checked = !!x?.needs_free_checkout;
+  daysPick($('[data-name="extra_checkout_days"]'), String(x?.checkout_days || '').split(',').filter(v => v !== ''));
+  $('#extraTitle').textContent = x ? `Editar extra: ${x.name}` : 'Extras al reservar';
+  $('#extraSave').textContent = x ? 'Guardar cambios' : 'Añadir extra';
+  $('#extraCancel').hidden = !x;
+  const cond = e => [String(e.checkout_days || '').split(',').filter(v => v !== '').map(d => 'salida en ' + DAY_NAMES[d]).join(' o '), e.needs_free_checkout ? 'si nadie entra ese día' : ''].filter(Boolean).join(', ') || 'Siempre';
+  $('#extraTable').innerHTML = '<thead><tr><th>Extra</th><th class="num">Precio</th><th>Cuándo se ofrece</th><th>Activo</th><th></th></tr></thead><tbody>'
+    + (list.length ? list.map(e => `<tr><td><b>${esc(e.name)}</b>${e.description ? `<br><span class="muted small">${esc(e.description)}</span>` : ''}</td>
+      <td class="num">${eur(e.price)}${e.per === 'night' ? ' / noche' : ''}${e.max_qty > 1 ? `<br><span class="muted small">hasta ${e.max_qty}</span>` : ''}</td>
+      <td class="muted">${esc(cond(e))}</td>
+      <td><label class="chk"><input type="checkbox" data-xtoggle="${e.id}" ${e.active ? 'checked' : ''}></label></td>
+      <td class="num"><button type="button" class="linkbtn" data-xedit="${e.id}">Editar</button> · <button type="button" class="linkbtn" data-xdel="${e.id}">Borrar</button></td></tr>`).join('')
+      : '<tr><td colspan="5" class="empty">Aún no hay extras</td></tr>') + '</tbody>';
+  $$('[data-xtoggle]').forEach(c => c.onchange = async () => { await act(api('/api/admin/extras/' + c.dataset.xtoggle, 'PATCH', { active: c.checked }), c.checked ? 'Extra activado' : 'Extra desactivado'); await refresh(); renderExtras(); });
+  $$('[data-xedit]').forEach(b => b.onclick = () => { extraEditing = Number(b.dataset.xedit); renderExtras(); f.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  $$('[data-xdel]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar este extra?') && await act(api('/api/admin/extras/' + b.dataset.xdel, 'DELETE'), 'Extra borrado')) { if (extraEditing === Number(b.dataset.xdel)) extraEditing = null; await refresh(); renderExtras(); } });
+}
+$('#extraCancel').onclick = () => { extraEditing = null; renderExtras(); };
+$('#extraForm').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  const cur = (S.extras || []).find(x => x.id === extraEditing);
+  const d = { name: f.name.value, price: f.price.value, description: f.description.value, per: f.per.value, max_qty: f.max_qty.value,
+    checkout_days: daysValue($('[data-name="extra_checkout_days"]')), needs_free_checkout: f.needs_free_checkout.checked, active: cur ? !!cur.active : true };
+  if (await act(api(extraEditing ? '/api/admin/extras/' + extraEditing : '/api/admin/extras', extraEditing ? 'PUT' : 'POST', d), extraEditing ? 'Extra guardado' : 'Extra añadido')) { extraEditing = null; await refresh(); renderExtras(); }
 };
 
 // ---------- SINCRONIZACIÓN ----------

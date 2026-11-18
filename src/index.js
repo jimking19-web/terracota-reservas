@@ -333,7 +333,7 @@ async function adminApi(req, env, url, path) {
   }
 
   if (path === '/api/admin/state' && req.method === 'GET') {
-    const [units, seasons, promos, feeds, photos, settings, pendingCount] = await Promise.all([
+    const [units, seasons, promos, feeds, photos, settings, pendingCount, extras] = await Promise.all([
       db.prepare('SELECT * FROM units ORDER BY sort, id').all(),
       db.prepare('SELECT * FROM seasons ORDER BY start_date').all(),
       db.prepare('SELECT * FROM promo_codes ORDER BY id DESC').all(),
@@ -341,8 +341,9 @@ async function adminApi(req, env, url, path) {
       db.prepare('SELECT id, unit_id, caption, category, sort, length(data) AS size FROM photos ORDER BY sort, id').all(),
       getSettings(db),
       db.prepare("SELECT count(*) AS n FROM bookings WHERE status = 'pending' AND (expires_at IS NULL OR expires_at > ?)").bind(sqlNow()).first(),
+      db.prepare('SELECT * FROM extras ORDER BY sort, id').all(),
     ]);
-    return json({ ok: true, units: units.results, seasons: seasons.results, promos: promos.results, feeds: feeds.results, photos: photos.results, settings,
+    return json({ ok: true, extras: extras.results, units: units.results, seasons: seasons.results, promos: promos.results, feeds: feeds.results, photos: photos.results, settings,
       today: todayMadrid(), origin: url.origin, stripe: !!env.STRIPE_SECRET_KEY, stripeMode: (env.STRIPE_SECRET_KEY || '').startsWith('sk_live') ? 'live' : (env.STRIPE_SECRET_KEY ? 'test' : 'off'),
       webhook: !!env.STRIPE_WEBHOOK_SECRET, mail: !!env.RESEND_API_KEY, pending: pendingCount.n,
       stripeAccount: env.STRIPE_ACCOUNT, stripeFromPanel: env.STRIPE_FROM_PANEL, passwordInCloudflare: !!env.ADMIN_PASSWORD });
@@ -500,6 +501,28 @@ async function adminApi(req, env, url, path) {
     stmts.push(db.prepare('DELETE FROM day_rules WHERE price IS NULL AND min_nights IS NULL AND closed = 0 AND no_checkin = 0 AND (note IS NULL OR note = \'\')'));
     for (let i = 0; i < stmts.length; i += 90) await db.batch(stmts.slice(i, i + 90));
     return json({ ok: true });
+  }
+
+  // Extras (leña, salida tarde…)
+  const extraId = (path.match(/^\/api\/admin\/extras\/(\d+)$/) || [])[1];
+  if ((path === '/api/admin/extras' && req.method === 'POST') || (extraId && req.method === 'PUT')) {
+    const name = String(b.name || '').trim();
+    if (!name) return bad('Pon un nombre al extra');
+    const price = cents(b.price);
+    if (price == null || !(price >= 0)) return bad('Precio no válido');
+    const days = (Array.isArray(b.checkout_days) ? b.checkout_days : String(b.checkout_days || '').split(',')).filter(v => v !== '' && /^[0-6]$/.test(String(v))).join(',');
+    const vals = [name.slice(0, 80), String(b.description || '').slice(0, 240), price, b.per === 'night' ? 'night' : 'stay',
+      Math.max(1, Math.min(20, parseInt(b.max_qty, 10) || 1)), days, b.needs_free_checkout ? 1 : 0, b.active === false || b.active === 0 ? 0 : 1];
+    if (extraId) await db.prepare('UPDATE extras SET name=?, description=?, price=?, per=?, max_qty=?, checkout_days=?, needs_free_checkout=?, active=? WHERE id = ?').bind(...vals, Number(extraId)).run();
+    else {
+      const max = await db.prepare('SELECT coalesce(max(sort), 0) AS s FROM extras').first();
+      await db.prepare('INSERT INTO extras (name, description, price, per, max_qty, checkout_days, needs_free_checkout, active, sort) VALUES (?,?,?,?,?,?,?,?,?)').bind(...vals, max.s + 1).run();
+    }
+    return json({ ok: true });
+  }
+  if ((m = path.match(/^\/api\/admin\/extras\/(\d+)$/))) {
+    if (req.method === 'DELETE') { await db.prepare('DELETE FROM extras WHERE id = ?').bind(Number(m[1])).run(); return json({ ok: true }); }
+    if (req.method === 'PATCH') { await db.prepare('UPDATE extras SET active = ? WHERE id = ?').bind(b.active ? 1 : 0, Number(m[1])).run(); return json({ ok: true }); }
   }
 
   // Códigos promocionales
