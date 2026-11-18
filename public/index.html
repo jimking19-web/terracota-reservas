@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Terracota Suites · Alojamiento rural en Bullas, Murcia</title>
+<meta name="description" content="Reserva directa en Terracota Suites, alojamiento rural con alberca en Bullas (Región de Murcia). Mejor precio garantizado y pago seguro.">
+<meta property="og:title" content="Terracota Suites · Bullas, Murcia">
+<meta property="og:description" content="Descanso, vino y calma en el Noroeste murciano. Reserva directa al mejor precio.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#2a211c">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <a class="brand" href="#top" aria-label="Inicio">
+    <span class="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 28V14a12 12 0 0 1 24 0v14" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M11 28V17a5 5 0 0 1 10 0v11" fill="none" stroke="currentColor" stroke-width="2.2"/></svg></span>
+    <span class="brand-text"><b data-s="site_name_short">Terracota</b><small>Suites</small></span>
+  </a>
+  <nav class="nav-links">
+    <a href="#alojamiento">El alojamiento</a>
+    <a href="#galeria">Galería</a>
+    <a href="#incluye">Qué incluye</a>
+    <a href="#ubicacion">Ubicación</a>
+    <a href="#reservar" class="btn btn-sm btn-terra">Reservar</a>
+  </nav>
+</header>
+
+<section class="hero" id="top">
+  <div class="hero-bg" id="heroBg"></div>
+  <div class="hero-shade"></div>
+  <div class="hero-content">
+    <p class="eyebrow light" data-s="address">Bullas, Región de Murcia</p>
+    <h1 data-s="tagline">Descanso, vino y calma en el Noroeste murciano</h1>
+    <div class="hero-badges" id="heroBadges"></div>
+  </div>
+  <form class="searchbar" id="searchbar" onsubmit="return false">
+    <button type="button" class="sb-field" data-open="checkin"><span class="sb-label">Entrada</span><span class="sb-value" id="sbIn">Añadir fecha</span></button>
+    <button type="button" class="sb-field" data-open="checkout"><span class="sb-label">Salida</span><span class="sb-value" id="sbOut">Añadir fecha</span></button>
+    <div class="sb-field sb-guests"><span class="sb-label">Huéspedes</span>
+      <div class="stepper small"><button type="button" data-g="-1" aria-label="Menos huéspedes">−</button><span id="sbGuests">2</span><button type="button" data-g="1" aria-label="Más huéspedes">+</button></div>
+    </div>
+    <button type="button" class="btn btn-terra sb-go" id="sbGo">Ver disponibilidad</button>
+  </form>
+</section>
+
+<section class="highlights" id="highlights"></section>
+
+<section class="section intro" id="alojamiento">
+  <div class="wrap two-col">
+    <div>
+      <p class="eyebrow">El alojamiento</p>
+      <h2 class="display" id="unitTitle">Terracota Suites</h2>
+      <p class="lead" data-s="intro"></p>
+      <ul class="facts" id="facts"></ul>
+      <div class="prose" id="description"></div>
+    </div>
+    <figure class="intro-photo" id="introPhoto"></figure>
+  </div>
+</section>
+
+<section class="section gallery-section" id="galeria">
+  <div class="wrap">
+    <div class="section-head"><div><p class="eyebrow">Galería</p><h2 class="display">Rincones para quedarse</h2></div>
+      <button class="btn btn-ghost" id="openGallery">Ver todas las fotos</button></div>
+    <div class="gallery" id="gallery"></div>
+  </div>
+</section>
+
+<section class="section included" id="incluye">
+  <div class="wrap">
+    <p class="eyebrow center">Detalles</p>
+    <h2 class="display center">Qué incluye tu estancia</h2>
+    <ul class="amenities" id="amenities"></ul>
+  </div>
+</section>
+
+<section class="section booking" id="reservar">
+  <div class="wrap">
+    <div class="section-head"><div><p class="eyebrow">Reserva directa</p><h2 class="display">Elige tus fechas</h2>
+      <p class="muted">Precio final por noche, sin comisiones de plataformas. Pago seguro con tarjeta.</p></div></div>
+    <div class="units-picker" id="unitsPicker" hidden></div>
+    <div class="booking-grid">
+      <div class="cal-card">
+        <div class="cal-head">
+          <button class="cal-nav" id="calPrev" aria-label="Mes anterior">‹</button>
+          <div class="cal-hint" id="calHint">Selecciona el día de entrada</div>
+          <button class="cal-nav" id="calNext" aria-label="Mes siguiente">›</button>
+        </div>
+        <div class="cal-months" id="calMonths"><div class="cal-loading">Cargando disponibilidad…</div></div>
+        <div class="cal-legend"><span><i class="lg-free"></i>Disponible</span><span><i class="lg-sel"></i>Tu selección</span><span><i class="lg-busy"></i>No disponible</span><button class="link" id="calClear">Borrar fechas</button></div>
+      </div>
+
+      <aside class="summary" id="summary">
+        <div class="sum-price"><span id="sumFrom">—</span><small id="sumFromLabel">/ noche</small></div>
+        <div class="sum-dates">
+          <button data-open="checkin"><span>Entrada</span><b id="sumIn">—</b></button>
+          <button data-open="checkout"><span>Salida</span><b id="sumOut">—</b></button>
+        </div>
+        <div class="sum-guests"><span>Huéspedes</span>
+          <div class="stepper"><button type="button" data-g="-1" aria-label="Menos">−</button><b id="sumGuests">2</b><button type="button" data-g="1" aria-label="Más">+</button></div>
+        </div>
+        <div class="sum-promo">
+          <button class="link" id="promoToggle">¿Tienes un código promocional?</button>
+          <div class="promo-row" id="promoRow" hidden><input id="promoInput" placeholder="CÓDIGO" autocomplete="off"><button class="btn btn-sm btn-dark" id="promoApply">Aplicar</button></div>
+          <p class="promo-msg" id="promoMsg"></p>
+        </div>
+        <div class="sum-lines" id="sumLines"></div>
+        <p class="sum-error" id="sumError"></p>
+        <button class="btn btn-terra btn-block" id="bookBtn" disabled>Selecciona fechas</button>
+        <p class="sum-note">No se te cobrará nada hasta completar el pago.</p>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="section location" id="ubicacion">
+  <div class="wrap two-col">
+    <div>
+      <p class="eyebrow">Ubicación</p>
+      <h2 class="display" data-s="address">Bullas, Región de Murcia</h2>
+      <p class="lead" data-s="location_text"></p>
+      <div class="info-grid">
+        <div><span>Entrada</span><b>desde las <em data-s="checkin_time"></em></b></div>
+        <div><span>Salida</span><b>antes de las <em data-s="checkout_time"></em></b></div>
+      </div>
+    </div>
+    <div class="map" id="map"></div>
+  </div>
+</section>
+
+<section class="section policies">
+  <div class="wrap three-col">
+    <div><h3>Normas de la casa</h3><ul id="rules"></ul></div>
+    <div><h3>Cancelación</h3><p data-s="cancellation"></p></div>
+    <div><h3>Contacto</h3><ul id="contact"></ul></div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="wrap footer-in">
+    <div class="brand light"><span class="brand-text"><b data-s="site_name"></b></span></div>
+    <p class="muted" id="legal"></p>
+    <p class="muted small">© <span id="year"></span> · Reserva directa</p>
+  </div>
+</footer>
+
+<div class="mobile-bar" id="mobileBar">
+  <div><b id="mbPrice">—</b><small id="mbSub">por noche</small></div>
+  <a class="btn btn-terra" href="#reservar" id="mbBtn">Reservar</a>
+</div>
+
+<!-- Datos del huésped -->
+<dialog class="modal" id="guestModal">
+  <form class="modal-in" id="guestForm" method="dialog" novalidate>
+    <button class="modal-x" type="button" data-close aria-label="Cerrar">×</button>
+    <p class="eyebrow">Último paso</p>
+    <h3 class="display small">Tus datos</h3>
+    <div class="trip" id="trip"></div>
+    <div class="form-grid">
+      <label class="full">Nombre y apellidos<input name="name" required autocomplete="name"></label>
+      <label>Email<input name="email" type="email" required autocomplete="email"></label>
+      <label>Teléfono<input name="phone" type="tel" required autocomplete="tel"></label>
+      <label class="full">País<input name="country" autocomplete="country-name" value="España"></label>
+      <label class="full">Comentarios (hora estimada de llegada, peticiones…)<textarea name="notes" rows="3"></textarea></label>
+      <input name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <label class="check full"><input type="checkbox" name="accept" required> <span>Acepto la política de cancelación y las normas de la casa.</span></label>
+    </div>
+    <p class="sum-error" id="formError"></p>
+    <button class="btn btn-terra btn-block" id="payBtn" type="submit">Pagar</button>
+    <p class="secure"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 8V7a3 3 0 0 1 6 0v3z"/></svg> Pago cifrado y procesado por Stripe</p>
+  </form>
+</dialog>
+
+<!-- Visor de fotos -->
+<dialog class="lightbox" id="lightbox">
+  <button class="lb-x" data-close aria-label="Cerrar">×</button>
+  <button class="lb-nav prev" id="lbPrev" aria-label="Anterior">‹</button>
+  <figure><img id="lbImg" alt=""><figcaption id="lbCap"></figcaption></figure>
+  <button class="lb-nav next" id="lbNext" aria-label="Siguiente">›</button>
+</dialog>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

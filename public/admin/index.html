@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel · Terracota Suites</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/admin/manifest.json">
+<meta name="theme-color" content="#2a211c">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<div id="login" class="login" hidden>
+  <form id="loginForm" class="login-card">
+    <div class="logo">Terracota <small>Panel</small></div>
+    <label>Contraseña<input type="password" id="pw" autocomplete="current-password" autofocus></label>
+    <p class="err" id="loginErr"></p>
+    <button class="btn primary block">Entrar</button>
+  </form>
+</div>
+
+<div id="app" class="app" hidden>
+  <aside class="side">
+    <div class="logo">Terracota <small>Panel</small></div>
+    <nav id="tabs">
+      <button data-tab="inicio" class="on"><i>◎</i>Inicio</button>
+      <button data-tab="calendario"><i>▦</i>Calendario y precios</button>
+      <button data-tab="reservas"><i>☰</i>Reservas <span class="pill" id="pendingPill" hidden></span></button>
+      <button data-tab="tarifas"><i>€</i>Tarifas y temporadas</button>
+      <button data-tab="codigos"><i>%</i>Descuentos y códigos</button>
+      <button data-tab="sincro"><i>⇄</i>Airbnb / Booking</button>
+      <button data-tab="web"><i>✎</i>Web y fotos</button>
+    </nav>
+    <div class="side-foot">
+      <a href="/" target="_blank">Ver la web ↗</a>
+      <button class="linkbtn" id="logout">Cerrar sesión</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <button class="burger" id="burger" aria-label="Menú">☰</button>
+      <h1 id="title">Inicio</h1>
+      <select id="unitSel" class="unit-sel" title="Alojamiento"></select>
+    </header>
+
+    <!-- INICIO -->
+    <section data-view="inicio" class="view">
+      <div id="warnings"></div>
+      <div class="kpis" id="kpis"></div>
+      <div class="grid2">
+        <div class="card"><div class="card-h"><h2>Próximas llegadas</h2><button class="linkbtn" data-goto="reservas">Ver todas</button></div><div id="nextArrivals"></div></div>
+        <div class="card"><div class="card-h"><h2>Ingresos por mes</h2><select id="statsYear"></select></div><div id="statsChart"></div></div>
+      </div>
+    </section>
+
+    <!-- CALENDARIO -->
+    <section data-view="calendario" class="view" hidden>
+      <div class="cal-toolbar">
+        <button class="btn" id="cPrev">‹</button>
+        <h2 id="cMonth"></h2>
+        <button class="btn" id="cNext">›</button>
+        <button class="btn" id="cToday">Hoy</button>
+        <span class="muted small hide-m">Pulsa un día y luego otro para seleccionar un rango</span>
+      </div>
+      <div class="acal" id="acal"></div>
+      <div class="legend"><span><i class="c-book"></i>Reserva web</span><span><i class="c-manual"></i>Reserva manual</span><span><i class="c-ext"></i>Airbnb / Booking</span><span><i class="c-block"></i>Bloqueado / cerrado</span><span><i class="c-pend"></i>Pendiente de pago</span><span><b class="dot-rule">•</b> Precio fijado a mano</span></div>
+    </section>
+
+    <!-- RESERVAS -->
+    <section data-view="reservas" class="view" hidden>
+      <div class="toolbar">
+        <div class="seg" id="bFilter"><button data-f="upcoming" class="on">Próximas</button><button data-f="past">Pasadas</button><button data-f="cancelled">Canceladas</button><button data-f="all">Todas</button></div>
+        <button class="btn primary" id="newBooking">+ Reserva manual</button>
+      </div>
+      <div class="card flush"><div class="table-wrap"><table class="tbl" id="bTable"></table></div></div>
+      <div class="card" id="extCard" hidden><div class="card-h"><h2>Bloqueos importados de Airbnb / Booking</h2></div><div class="table-wrap"><table class="tbl" id="extTable"></table></div></div>
+    </section>
+
+    <!-- TARIFAS -->
+    <section data-view="tarifas" class="view" hidden>
+      <form class="card" id="unitForm">
+        <div class="card-h"><h2>Precios base</h2><button class="btn primary">Guardar</button></div>
+        <div class="fgrid">
+          <label>Precio noche (entre semana) €<input name="base_price" inputmode="decimal" required></label>
+          <label>Precio noche fin de semana €<input name="weekend_price" inputmode="decimal" placeholder="Igual que entre semana"></label>
+          <div class="field span2"><span>Noches que cuentan como fin de semana</span><div class="days-pick" data-name="weekend_nights"></div></div>
+          <label>Estancia mínima (noches)<input name="min_nights" type="number" min="1" required></label>
+          <label>Estancia máxima (noches)<input name="max_nights" type="number" min="1" required></label>
+          <label>Tasa de limpieza €<input name="cleaning_fee" inputmode="decimal"></label>
+          <label>Huéspedes máximos<input name="max_guests" type="number" min="1" required></label>
+          <label>Huéspedes incluidos en el precio<input name="base_guests" type="number" min="1" required></label>
+          <label>Suplemento por huésped extra / noche €<input name="extra_guest_fee" inputmode="decimal"></label>
+          <div class="field span2"><span>Días en los que se puede entrar</span><div class="days-pick" data-name="checkin_days" data-labels="day"></div></div>
+          <label>Antelación mínima para reservar (días)<input name="min_advance_days" type="number" min="0"></label>
+          <label>Reservar con hasta (días vista)<input name="max_advance_days" type="number" min="30"></label>
+        </div>
+        <h3>Descuentos automáticos</h3>
+        <div class="fgrid">
+          <label>Semanal (7+ noches) %<input name="weekly_discount" inputmode="decimal"></label>
+          <label>Mensual (28+ noches) %<input name="monthly_discount" inputmode="decimal"></label>
+          <label>Última hora: reservas a ≤ X días<input name="last_minute_days" type="number" min="0"></label>
+          <label>Descuento última hora %<input name="last_minute_discount" inputmode="decimal"></label>
+          <label>Anticipada: reservas a ≥ X días<input name="early_bird_days" type="number" min="0"></label>
+          <label>Descuento anticipada %<input name="early_bird_discount" inputmode="decimal"></label>
+        </div>
+        <p class="hint">Los descuentos se calculan sobre el alojamiento (noches + huéspedes extra). La limpieza nunca se descuenta. Prioridad del precio de cada noche: <b>precio fijado en el calendario</b> → <b>temporada</b> (la de mayor prioridad) → <b>precio base</b>.</p>
+      </form>
+
+      <div class="card">
+        <div class="card-h"><h2>Temporadas</h2><button class="btn" id="addSeason">+ Temporada</button></div>
+        <div class="table-wrap"><table class="tbl" id="seasonTable"></table></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h2>Simulador de precio</h2></div>
+        <div class="sim">
+          <label>Entrada<input type="date" id="simIn"></label>
+          <label>Salida<input type="date" id="simOut"></label>
+          <label>Huéspedes<input type="number" id="simGuests" value="2" min="1"></label>
+          <label>Código<input id="simPromo" placeholder="opcional"></label>
+          <button class="btn primary" id="simGo">Calcular</button>
+        </div>
+        <div id="simOutBox"></div>
+      </div>
+    </section>
+
+    <!-- CÓDIGOS -->
+    <section data-view="codigos" class="view" hidden>
+      <form class="card" id="promoForm">
+        <div class="card-h"><h2>Nuevo código promocional</h2><button class="btn primary">Crear código</button></div>
+        <div class="fgrid">
+          <label>Código<input name="code" required placeholder="VERANO10" style="text-transform:uppercase"></label>
+          <label>Tipo<select name="kind"><option value="pct">Porcentaje (%)</option><option value="fixed">Importe fijo (€)</option></select></label>
+          <label>Valor<input name="value" inputmode="decimal" required></label>
+          <label>Mínimo de noches<input name="min_nights" type="number" min="0" value="0"></label>
+          <label>Válido para entradas desde<input name="valid_from" type="date"></label>
+          <label>hasta<input name="valid_to" type="date"></label>
+          <label>Usos máximos<input name="max_uses" type="number" min="1" placeholder="Ilimitado"></label>
+          <label>Nota interna<input name="note" placeholder="Ej.: clientes de bodas"></label>
+        </div>
+      </form>
+      <div class="card flush"><div class="table-wrap"><table class="tbl" id="promoTable"></table></div></div>
+    </section>
+
+    <!-- SINCRO -->
+    <section data-view="sincro" class="view" hidden>
+      <div class="card">
+        <div class="card-h"><h2>1 · Exportar: tu calendario para Airbnb y Booking</h2></div>
+        <p class="hint">Copia esta dirección y pégala en Airbnb (Calendario → Disponibilidad → Conectar calendarios → Importar) y en Booking (Tarifas y disponibilidad → Sincronizar calendarios → Importar). Así, cuando alguien reserve en tu web, se bloqueará allí.</p>
+        <div class="copy"><input id="exportUrl" readonly><button class="btn" id="copyExport">Copiar</button></div>
+      </div>
+      <form class="card" id="feedForm">
+        <div class="card-h"><h2>2 · Importar: calendarios de Airbnb y Booking</h2><button class="btn" type="button" id="syncNow">Sincronizar ahora</button></div>
+        <p class="hint">En Airbnb: Calendario → Disponibilidad → Conectar calendarios → Exportar calendario. En Booking: Tarifas y disponibilidad → Sincronizar calendarios → Exportar. Pega aquí esos enlaces. Se sincronizan solos cada 15 minutos.</p>
+        <div class="fgrid">
+          <label>Nombre<select name="name"><option>Airbnb</option><option>Booking.com</option><option>Google Calendar</option><option>Otro</option></select></label>
+          <label class="span2">Enlace iCal (.ics)<input name="url" required placeholder="https://www.airbnb.es/calendar/ical/....ics"></label>
+          <div class="field"><span>&nbsp;</span><button class="btn primary">Añadir</button></div>
+        </div>
+        <div class="table-wrap"><table class="tbl" id="feedTable"></table></div>
+      </form>
+    </section>
+
+    <!-- WEB -->
+    <section data-view="web" class="view" hidden>
+      <div class="card">
+        <div class="card-h"><h2>Fotos</h2><label class="btn primary">Subir fotos<input type="file" id="photoInput" accept="image/*" multiple hidden></label></div>
+        <p class="hint">Se redimensionan automáticamente. Arrastra para ordenar; la primera es la portada salvo que marques otra con ★.</p>
+        <div class="photos" id="photos"></div>
+        <p class="muted small" id="uploadStatus"></p>
+      </div>
+      <form class="card" id="unitInfoForm">
+        <div class="card-h"><h2>Alojamiento</h2><button class="btn primary">Guardar</button></div>
+        <div class="fgrid">
+          <label>Nombre<input name="name" required></label>
+          <label>Dormitorios<input name="bedrooms" type="number" min="0"></label>
+          <label>Camas<input name="beds" type="number" min="0"></label>
+          <label>Baños<input name="bathrooms" type="number" min="0"></label>
+          <label class="span2">Resumen<input name="summary"></label>
+          <label class="span4">Descripción propia de este alojamiento (si se deja vacía se usa la general)<textarea name="description" rows="4"></textarea></label>
+          <label>Visible en la web<select name="active"><option value="1">Sí</option><option value="0">No</option></select></label>
+        </div>
+        <button type="button" class="linkbtn" id="addUnit">+ Añadir otra suite / alojamiento</button>
+      </form>
+      <form class="card" id="settingsForm">
+        <div class="card-h"><h2>Textos de la web</h2><button class="btn primary">Guardar</button></div>
+        <div class="fgrid">
+          <label class="span2">Nombre<input name="site_name"></label>
+          <label class="span2">Frase de portada<input name="tagline"></label>
+          <label class="span4">Introducción<textarea name="intro" rows="2"></textarea></label>
+          <label class="span4">Descripción (deja una línea en blanco entre párrafos)<textarea name="description" rows="6"></textarea></label>
+          <label class="span2">Qué incluye (uno por línea)<textarea name="amenities" rows="8"></textarea></label>
+          <label class="span2">Destacados (título|texto, uno por línea)<textarea name="highlights" rows="8"></textarea></label>
+          <label class="span2">Normas de la casa (una por línea)<textarea name="house_rules" rows="4"></textarea></label>
+          <label class="span2">Política de cancelación<textarea name="cancellation" rows="4"></textarea></label>
+          <label class="span2">Dirección / zona visible<input name="address"></label>
+          <label class="span2">Búsqueda para el mapa<input name="map_query" placeholder="Bullas, Murcia"></label>
+          <label class="span4">Texto de ubicación<textarea name="location_text" rows="2"></textarea></label>
+          <label>Hora de entrada<input name="checkin_time" placeholder="16:00"></label>
+          <label>Hora de salida<input name="checkout_time" placeholder="12:00"></label>
+          <label>Teléfono<input name="phone"></label>
+          <label>WhatsApp<input name="whatsapp" placeholder="+34 6..."></label>
+          <label>Email (recibe los avisos)<input name="email" type="email"></label>
+          <label>Instagram<input name="instagram" placeholder="@terracotasuites"></label>
+          <label>Nº registro turístico<input name="license"></label>
+          <label>Mostrar «Superanfitriones»<select name="superhost"><option value="1">Sí</option><option value="0">No</option></select></label>
+          <label class="span2">Titular (nombre legal)<input name="legal_name"></label>
+          <label class="span2">NIF<input name="legal_id"></label>
+        </div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<!-- Panel lateral de rango del calendario -->
+<dialog class="drawer" id="rangeDrawer">
+  <form id="rangeForm" method="dialog">
+    <div class="drawer-h"><h3 id="rangeTitle"></h3><button type="button" class="x" data-close>×</button></div>
+    <div class="drawer-b">
+      <div id="rangeInfo"></div>
+      <h4>Precio y reglas</h4>
+      <div class="fgrid one">
+        <label>Precio por noche €<input name="price" inputmode="decimal" placeholder="Sin cambio"></label>
+        <label>Estancia mínima<input name="min_nights" type="number" min="1" placeholder="Sin cambio"></label>
+        <div class="field"><span>Aplicar solo a</span><div class="days-pick" data-name="weekdays" data-labels="day"></div></div>
+        <label class="chk"><input type="checkbox" name="closed"> Cerrar estos días (no se puede reservar)</label>
+        <label class="chk"><input type="checkbox" name="no_checkin"> No permitir entradas estos días</label>
+        <label>Nota<input name="note" placeholder="Ej.: fiestas de Bullas"></label>
+      </div>
+      <div class="row-btns">
+        <button class="btn primary" type="button" id="rangeSave">Guardar cambios</button>
+        <button class="btn danger-ghost" type="button" id="rangeClear">Volver a precio de tarifa</button>
+      </div>
+      <h4>Reservar o bloquear</h4>
+      <div class="row-btns">
+        <button class="btn" type="button" id="rangeBook">Reserva manual</button>
+        <button class="btn" type="button" id="rangeBlock">Bloquear fechas</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="modal" id="modal"><div id="modalBody"></div></dialog>
+<div class="toast" id="toast"></div>
+<script src="/admin/admin.js" type="module"></script>
+</body>
+</html>

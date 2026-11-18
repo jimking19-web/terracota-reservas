@@ -1,0 +1,18 @@
+{
+"type": "module",
+  "name": "terracota-reservas",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute terracota-reservas --remote --file=schema.sql",
+    "db:local": "wrangler d1 execute terracota-reservas --local --file=schema.sql"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "wrangler": "^4.164.0"
+  },
+  "private": true
+}

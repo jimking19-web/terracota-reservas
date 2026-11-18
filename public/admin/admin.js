@@ -1,0 +1,497 @@
+// Panel de administración · Terracota Suites
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const eur = c => c == null ? '' : (c / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+const eurShort = c => (c / 100).toLocaleString('es-ES', { maximumFractionDigits: c % 100 ? 2 : 0 }) + '€';
+const toEuros = c => c == null ? '' : String(c / 100).replace('.', ',');
+const addDays = (s, n) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const diff = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
+const fd = (s, o = { day: 'numeric', month: 'short' }) => new Date(s + 'T00:00:00Z').toLocaleDateString('es-ES', { ...o, timeZone: 'UTC' });
+const DOW = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
+const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const STATUS = { confirmed: 'Confirmada', pending: 'Pendiente', cancelled: 'Cancelada', expired: 'Caducada' };
+const SOURCE = { web: 'Web', manual: 'Manual', bloqueo: 'Bloqueo' };
+
+let S = null;           // estado del servidor
+let unitId = Number(localStorage.getItem('ts_unit') || 1);
+const unit = () => S.units.find(u => u.id === unitId) || S.units[0];
+
+async function api(path, method = 'GET', body) {
+  const r = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401 && !path.endsWith('/login')) { showLogin(); throw new Error('Sesión caducada'); }
+  const j = await r.json().catch(() => ({ ok: false, error: 'Respuesta no válida' }));
+  return j;
+}
+function toast(msg, err = false) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.className = 'toast', 2800);
+}
+async function act(promise, okMsg) {
+  const r = await promise;
+  if (r.ok === false) { toast(r.error || 'Error', true); return null; }
+  if (okMsg) toast(okMsg);
+  return r;
+}
+
+// ---------- selector de días de la semana ----------
+function daysPick(el, values) {
+  const set = new Set(values.map(Number));
+  const labels = el.dataset.labels === 'day' ? DOW : ['D→L', 'L→M', 'M→X', 'X→J', 'J→V', 'V→S', 'S→D'];
+  el.innerHTML = DOW_ORDER.map(d => `<button type="button" data-d="${d}" class="${set.has(d) ? 'on' : ''}" title="${labels[d]}">${labels[d]}</button>`).join('');
+  el.onclick = e => { const b = e.target.closest('button'); if (b) b.classList.toggle('on'); };
+}
+const daysValue = el => $$(`[data-name="${el.dataset.name}"] button.on`).filter(b => el.contains(b)).map(b => Number(b.dataset.d));
+
+// ---------- login ----------
+function showLogin() { $('#app').hidden = true; $('#login').hidden = false; $('#pw').focus(); }
+$('#loginForm').onsubmit = async e => {
+  e.preventDefault();
+  const r = await api('/api/admin/login', 'POST', { password: $('#pw').value });
+  if (!r.ok) { $('#loginErr').textContent = r.error; return; }
+  $('#login').hidden = true; boot();
+};
+$('#logout').onclick = async () => { await api('/api/admin/logout', 'POST'); location.reload(); };
+
+// ---------- navegación ----------
+let currentTab = 'inicio';
+function go(tab) {
+  currentTab = tab;
+  $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  $$('.view').forEach(v => v.hidden = v.dataset.view !== tab);
+  $('#title').textContent = $(`#tabs [data-tab="${tab}"]`).textContent.replace(/\d+$/, '').trim().replace(/^[^\wÁÉÍÓÚáéíóú]+/, '');
+  $('.side').classList.remove('open');
+  history.replaceState(null, '', '#' + tab);
+  ({ inicio: renderHome, calendario: renderCal, reservas: loadBookings, tarifas: renderTarifas, codigos: renderPromos, sincro: renderSync, web: renderWeb })[tab]?.();
+}
+$('#tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); };
+document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) go(g.dataset.goto); });
+$('#burger').onclick = () => $('.side').classList.toggle('open');
+$('#unitSel').onchange = e => { unitId = Number(e.target.value); localStorage.setItem('ts_unit', unitId); go(currentTab); };
+$$('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
+
+async function refresh() {
+  S = await api('/api/admin/state');
+  if (!S.units.some(u => u.id === unitId)) unitId = S.units[0].id;
+  $('#unitSel').innerHTML = S.units.map(u => `<option value="${u.id}" ${u.id === unitId ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
+  $('#unitSel').hidden = S.units.length < 2;
+  $('#pendingPill').hidden = !S.pending; $('#pendingPill').textContent = S.pending;
+}
+
+async function boot() {
+  try { await refresh(); } catch { return; }
+  if (S.ok === false) return showLogin();
+  $('#app').hidden = false;
+  go((location.hash || '#inicio').slice(1) || 'inicio');
+}
+
+// ---------- INICIO ----------
+async function renderHome() {
+  const w = [];
+  if (!S.stripe) w.push('<div class="warn">Stripe no está configurado: las reservas llegan como <b>solicitudes</b> sin pago. Añade STRIPE_SECRET_KEY en Cloudflare para cobrar con tarjeta.</div>');
+  else if (!S.webhook) w.push('<div class="warn">Falta STRIPE_WEBHOOK_SECRET: los pagos se confirman al volver el cliente a la web, pero conviene configurar el webhook.</div>');
+  else if (S.stripeMode === 'test') w.push('<div class="warn">Stripe está en <b>modo de prueba</b>. Cambia a las claves «live» para cobrar de verdad.</div>');
+  if (!S.mail) w.push('<div class="warn">Los emails de confirmación están desactivados (falta RESEND_API_KEY). Las reservas se ven aquí igualmente.</div>');
+  if (!S.feeds.length) w.push('<div class="warn">Aún no has conectado Airbnb ni Booking. <button class="linkbtn" data-goto="sincro">Conectar ahora</button></div>');
+  $('#warnings').innerHTML = w.join('');
+
+  const [b, st] = await Promise.all([api('/api/admin/bookings?filter=upcoming'), api('/api/admin/stats?year=' + ($('#statsYear').value || S.today.slice(0, 4)))]);
+  const today = S.today;
+  const mine = b.bookings.filter(x => x.unit_id === unitId);
+  const inHouse = mine.filter(x => x.status === 'confirmed' && x.checkin <= today && x.checkout > today && x.source !== 'bloqueo');
+  const next30 = mine.filter(x => x.status === 'confirmed' && x.checkin >= today && x.checkin <= addDays(today, 30) && x.source !== 'bloqueo');
+  const totalYear = st.months.reduce((a, m) => a + m.total, 0);
+  const nightsYear = st.months.reduce((a, m) => a + m.nights, 0);
+  $('#kpis').innerHTML = [
+    ['Huéspedes ahora', inHouse.length ? esc(inHouse[0].name.split(' ')[0]) : '—'],
+    ['Llegadas 30 días', next30.length],
+    [`Ingresos web/manual ${st.year}`, eur(totalYear)],
+    [`Noches vendidas ${st.year}`, nightsYear],
+  ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join('');
+
+  const list = [...mine.filter(x => x.source !== 'bloqueo').map(x => ({ ...x, kind: 'own' })), ...b.external.filter(x => x.unit_id === unitId).map(x => ({ checkin: x.start_date, checkout: x.end_date, name: x.summary || 'Reserva', source: x.feed_name, kind: 'ext' }))]
+    .filter(x => x.checkout > today).sort((a, c) => a.checkin.localeCompare(c.checkin)).slice(0, 8);
+  $('#nextArrivals').innerHTML = list.length ? list.map(x => `<div class="arrival" ${x.id ? `data-bid="${x.id}"` : ''}><div class="date">${new Date(x.checkin + 'T00:00:00Z').getUTCDate()}<small>${fd(x.checkin, { month: 'short' })}</small></div>
+    <div style="flex:1"><b>${esc(x.name || '—')}</b><div class="muted small">${diff(x.checkin, x.checkout)} noches · hasta ${fd(x.checkout)} ${x.guests ? '· ' + x.guests + ' pers.' : ''}</div></div>
+    <span class="tag ${x.kind === 'ext' ? 't-bloqueo' : 't-' + x.source}">${esc(x.kind === 'ext' ? x.source : SOURCE[x.source])}</span>${x.status === 'pending' ? '<span class="tag t-pending">Pendiente</span>' : ''}</div>`).join('')
+    : '<p class="muted">No hay llegadas próximas.</p>';
+  $$('#nextArrivals [data-bid]').forEach(el => el.onclick = () => openBooking(Number(el.dataset.bid), mine));
+
+  const ys = $('#statsYear');
+  if (!ys.options.length) { const y = Number(today.slice(0, 4)); ys.innerHTML = [y + 1, y, y - 1].map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join(''); ys.onchange = renderHome; }
+  const months = Array.from({ length: 12 }, (_, i) => st.months.find(m => m.month === `${st.year}-${String(i + 1).padStart(2, '0')}`) || { total: 0 });
+  const max = Math.max(1, ...months.map(m => m.total));
+  $('#statsChart').innerHTML = `<div class="bars">${months.map((m, i) => `<div title="${eur(m.total)}"><em>${m.total ? Math.round(m.total / 100) : ''}</em><i style="height:${(m.total / max) * 100}%"></i>${'EFMAMJJASOND'[i]}</div>`).join('')}</div><p class="muted small">Solo reservas directas (web y manuales). Lo de Airbnb/Booking no se incluye.</p>`;
+}
+
+// ---------- CALENDARIO ----------
+let calMonth = null, calDays = [], selA = null, selB = null;
+async function renderCal() {
+  if (!calMonth) calMonth = S.today.slice(0, 8) + '01';
+  const d0 = new Date(calMonth + 'T00:00:00Z');
+  const mt = d0.toLocaleDateString('es-ES', { month: 'long', year: 'numeric', timeZone: 'UTC' }).replace(' de ', ' ');
+  $('#cMonth').textContent = mt.charAt(0).toUpperCase() + mt.slice(1);
+  const lead = (d0.getUTCDay() + 6) % 7;
+  const start = addDays(calMonth, -lead);
+  const r = await api(`/api/admin/calendar?unit=${unitId}&from=${start}&days=42`);
+  calDays = r.days;
+  drawCal();
+}
+function drawCal() {
+  const month = calMonth.slice(0, 7);
+  const [a, b] = selA && selB ? [selA, selB].sort() : [selA, selA];
+  let html = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(x => `<div class="dow">${x}</div>`).join('');
+  for (const d of calDays) {
+    const cls = ['acell'];
+    if (d.date.slice(0, 7) !== month) cls.push('out');
+    if (d.date < S.today) cls.push('past');
+    if (d.date === S.today) cls.push('today');
+    if (a && d.date >= a && d.date <= b) cls.push('sel');
+    const season = d.season ? S.seasons.find(s => s.name === d.season && s.unit_id === unitId) : null;
+    let bk = '';
+    if (d.booking) {
+      const c = d.booking.status === 'pending' ? 'pending' : d.booking.source;
+      bk = `<div class="bk ${c} ${d.booking.start ? '' : 'cont'}" data-bid="${d.booking.id}">${d.booking.start ? '' : '↳ '}${esc(d.booking.name || d.booking.ref)}</div>`;
+    } else if (d.external) bk = `<div class="bk ext">${esc((S.feeds.find(f => f.id === d.external.feed_id) || {}).name || 'Externa')}</div>`;
+    else if (d.closed) bk = '<div class="bk closed">Cerrado</div>';
+    const meta = [`mín. ${d.minNights}`, d.noCheckin ? 'sin entrada' : '', d.rule?.note || ''].filter(Boolean).join(' · ');
+    html += `<div class="${cls.join(' ')}" data-d="${d.date}">
+      <div class="dn">${Number(d.date.slice(8))}<small>${d.weekend ? 'finde' : ''}</small></div>
+      <div class="pr ${d.rule?.price != null ? 'rule' : ''}">${eurShort(d.price)}</div>
+      ${season ? `<span class="season" style="background:${esc(season.color)}">${esc(season.name)}</span>` : ''}
+      <div class="meta">${esc(meta)}</div>${bk}</div>`;
+  }
+  $('#acal').innerHTML = html;
+}
+$('#acal').onclick = e => {
+  const bkEl = e.target.closest('[data-bid]');
+  if (bkEl) { openBooking(Number(bkEl.dataset.bid)); return; }
+  const c = e.target.closest('.acell'); if (!c) return;
+  const d = c.dataset.d;
+  if (!selA || selB) { selA = d; selB = null; drawCal(); return; }
+  selB = d; drawCal(); openRange();
+};
+$('#cPrev').onclick = () => { const d = new Date(calMonth + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - 1); calMonth = d.toISOString().slice(0, 10); renderCal(); };
+$('#cNext').onclick = () => { const d = new Date(calMonth + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); calMonth = d.toISOString().slice(0, 10); renderCal(); };
+$('#cToday').onclick = () => { calMonth = S.today.slice(0, 8) + '01'; renderCal(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && currentTab === 'calendario') { selA = selB = null; drawCal(); } });
+
+let rangeDirty = {};
+function openRange() {
+  const [a, b] = [selA, selB].sort();
+  const sel = calDays.filter(d => d.date >= a && d.date <= b);
+  const n = diff(a, b) + 1;
+  $('#rangeTitle').textContent = a === b ? fd(a, { weekday: 'long', day: 'numeric', month: 'long' }) : `${fd(a)} – ${fd(b)} · ${n} días`;
+  const prices = [...new Set(sel.map(d => d.price))];
+  const busy = sel.filter(d => d.booking || d.external).length;
+  $('#rangeInfo').innerHTML = `<div class="kv"><span>Precio actual</span><b>${prices.length === 1 ? eur(prices[0]) : `${eurShort(Math.min(...prices))} – ${eurShort(Math.max(...prices))}`}</b>
+    <span>Ocupados</span><b>${busy ? `${busy} de ${n} días` : 'Libre'}</b></div>`;
+  const f = $('#rangeForm');
+  f.reset();
+  f.price.placeholder = prices.length === 1 ? `Actual: ${toEuros(prices[0])}` : 'Sin cambio';
+  f.closed.checked = sel.every(d => d.closed);
+  f.no_checkin.checked = sel.every(d => d.rule?.no_checkin);
+  rangeDirty = {};
+  f.closed.onchange = () => rangeDirty.closed = 1;
+  f.no_checkin.onchange = () => rangeDirty.no_checkin = 1;
+  f.note.oninput = () => rangeDirty.note = 1;
+  daysPick(f.querySelector('[data-name="weekdays"]'), [0, 1, 2, 3, 4, 5, 6]);
+  $('#rangeDrawer').showModal();
+}
+async function saveRange(clear) {
+  const [a, b] = [selA, selB].sort();
+  const f = $('#rangeForm');
+  const weekdays = daysValue(f.querySelector('[data-name="weekdays"]'));
+  const payload = { unit_id: unitId, from: a, to: b, weekdays: weekdays.length === 7 ? null : weekdays };
+  if (clear) payload.clear = true;
+  else {
+    if (f.price.value.trim()) payload.price = f.price.value.trim();
+    if (f.min_nights.value.trim()) payload.min_nights = f.min_nights.value.trim();
+    if (rangeDirty.closed) payload.closed = f.closed.checked;
+    if (rangeDirty.no_checkin) payload.no_checkin = f.no_checkin.checked;
+    if (rangeDirty.note) payload.note = f.note.value;
+    if (Object.keys(payload).length === 5) { toast('No has cambiado nada', true); return; }
+  }
+  if (await act(api('/api/admin/days', 'POST', payload), clear ? 'Días devueltos a la tarifa' : 'Cambios guardados')) {
+    $('#rangeDrawer').close(); selA = selB = null; renderCal();
+  }
+}
+$('#rangeSave').onclick = () => saveRange(false);
+$('#rangeClear').onclick = () => saveRange(true);
+$('#rangeBook').onclick = () => { const [a, b] = [selA, selB].sort(); $('#rangeDrawer').close(); bookingForm({ checkin: a, checkout: addDays(b, 1) }); };
+$('#rangeBlock').onclick = async () => {
+  const [a, b] = [selA, selB].sort();
+  const name = prompt('Motivo del bloqueo (opcional)', 'Bloqueo');
+  if (name === null) return;
+  if (await act(api('/api/admin/bookings', 'POST', { unit_id: unitId, checkin: a, checkout: addDays(b, 1), source: 'bloqueo', name: name || 'Bloqueo' }), 'Fechas bloqueadas')) {
+    $('#rangeDrawer').close(); selA = selB = null; renderCal();
+  }
+};
+$('#rangeDrawer').addEventListener('close', () => { if (currentTab === 'calendario') { selA = selB = null; drawCal(); } });
+
+// ---------- RESERVAS ----------
+let bFilter = 'upcoming', bCache = [];
+$('#bFilter').onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; bFilter = b.dataset.f; $$('#bFilter button').forEach(x => x.classList.toggle('on', x === b)); loadBookings(); };
+async function loadBookings() {
+  const r = await api('/api/admin/bookings?filter=' + bFilter);
+  bCache = r.bookings.filter(b => b.unit_id === unitId);
+  $('#bTable').innerHTML = `<thead><tr><th>Ref.</th><th>Huésped</th><th>Entrada</th><th>Salida</th><th class="num">Noches</th><th class="num">Pers.</th><th class="num">Total</th><th>Origen</th><th>Estado</th></tr></thead><tbody>`
+    + (bCache.length ? bCache.map(b => `<tr class="click" data-id="${b.id}"><td><b>${b.ref}</b></td><td>${esc(b.name)}<div class="muted small">${esc(b.phone || '')}</div></td><td>${fd(b.checkin, { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${fd(b.checkout, { weekday: 'short', day: 'numeric', month: 'short' })}</td>
+      <td class="num">${b.nights}</td><td class="num">${b.guests}</td><td class="num">${b.source === 'bloqueo' ? '—' : eur(b.total)}${b.source !== 'bloqueo' && !b.paid && b.status === 'confirmed' ? '<div class="small" style="color:var(--warn)">sin cobrar</div>' : ''}</td>
+      <td><span class="tag t-${b.source}">${SOURCE[b.source]}</span></td><td><span class="tag t-${b.status}">${STATUS[b.status]}</span>${b.internal_note?.includes('CONFLICTO') ? ' ⚠️' : ''}</td></tr>`).join('')
+      : '<tr><td colspan="9" class="empty">No hay reservas aquí</td></tr>') + '</tbody>';
+  $$('#bTable tr.click').forEach(tr => tr.onclick = () => openBooking(Number(tr.dataset.id), bCache));
+  const ext = r.external.filter(x => x.unit_id === unitId);
+  $('#extCard').hidden = !ext.length;
+  $('#extTable').innerHTML = '<thead><tr><th>Canal</th><th>Entrada</th><th>Salida</th><th class="num">Noches</th><th>Detalle</th></tr></thead><tbody>'
+    + ext.map(x => `<tr><td><b>${esc(x.feed_name)}</b></td><td>${fd(x.start_date, { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${fd(x.end_date, { weekday: 'short', day: 'numeric', month: 'short' })}</td><td class="num">${diff(x.start_date, x.end_date)}</td><td class="muted">${esc(x.summary)}</td></tr>`).join('') + '</tbody>';
+}
+
+async function openBooking(id, cache) {
+  let b = (cache || bCache).find(x => x.id === id);
+  if (!b) { const r = await api('/api/admin/bookings?filter=all'); b = r.bookings.find(x => x.id === id); }
+  if (!b) return toast('Reserva no encontrada', true);
+  const lines = JSON.parse(b.breakdown || '[]');
+  const isBlock = b.source === 'bloqueo';
+  $('#modalBody').innerHTML = `<div class="drawer-h"><h3>${isBlock ? 'Bloqueo' : 'Reserva'} ${b.ref}</h3><button class="x" data-close>×</button></div>
+  <div class="drawer-b">
+    <p><span class="tag t-${b.status}">${STATUS[b.status]}</span> <span class="tag t-${b.source}">${SOURCE[b.source]}</span> ${b.paid ? '<span class="tag t-confirmed">Cobrada</span>' : ''}</p>
+    ${b.internal_note?.includes('CONFLICTO') ? `<div class="warn">${esc(b.internal_note)}</div>` : ''}
+    <div class="kv"><span>Fechas</span><b>${fd(b.checkin, { weekday: 'short', day: 'numeric', month: 'long' })} → ${fd(b.checkout, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })} (${b.nights} noches)</b>
+      <span>Creada</span><span>${esc(b.created_at)} UTC</span>${b.stripe_payment ? `<span>Pago Stripe</span><a href="https://dashboard.stripe.com/payments/${esc(b.stripe_payment)}" target="_blank">${esc(b.stripe_payment)}</a>` : ''}
+      ${b.promo_code ? `<span>Código</span><b>${esc(b.promo_code)}</b>` : ''}</div>
+    ${isBlock ? '' : `<div class="lines">${lines.map(l => `<div class="r"><span>${esc(l.label)}</span><span>${eur(l.amount)}</span></div>`).join('')}<div class="r t"><span>Total</span><span>${eur(b.total)}</span></div></div>`}
+    <form id="bEdit" class="fgrid" style="grid-template-columns:1fr 1fr">
+      <label class="span2">Nombre<input name="name" value="${esc(b.name)}"></label>
+      ${isBlock ? '' : `<label>Email<input name="email" value="${esc(b.email)}"></label><label>Teléfono<input name="phone" value="${esc(b.phone)}"></label>
+      <label>País<input name="country" value="${esc(b.country)}"></label><label>Huéspedes<input name="guests" type="number" min="1" value="${b.guests}"></label>
+      <label>Total €<input name="total" inputmode="decimal" value="${toEuros(b.total)}"></label><label class="chk" style="align-self:end"><input type="checkbox" name="paid" ${b.paid ? 'checked' : ''}> Cobrada</label>
+      <label class="span2">Comentarios del huésped<textarea name="notes" rows="2">${esc(b.notes)}</textarea></label>`}
+      <label class="span2">Nota interna<textarea name="internal_note" rows="2">${esc(b.internal_note)}</textarea></label>
+    </form>
+    <div class="row-btns">
+      <button class="btn primary" id="bSave">Guardar</button>
+      ${b.status === 'pending' || b.status === 'expired' ? '<button class="btn" id="bConfirm">Confirmar reserva</button>' : ''}
+      ${b.status === 'confirmed' || b.status === 'pending' ? `<button class="btn danger-ghost" id="bCancel">${isBlock ? 'Quitar bloqueo' : 'Cancelar reserva'}</button>` : ''}
+      ${b.email ? `<a class="btn" href="mailto:${esc(b.email)}?subject=${encodeURIComponent('Tu reserva ' + b.ref)}">Email</a>` : ''}
+      ${b.phone ? `<a class="btn" href="https://wa.me/${esc(b.phone.replace(/\D/g, '').replace(/^(?!34)(\d{9})$/, '34$1'))}" target="_blank">WhatsApp</a>` : ''}
+    </div>
+    ${b.stripe_payment && b.status === 'confirmed' ? '<p class="hint">Si cancelas una reserva pagada, haz el reembolso (total o parcial) desde Stripe con el enlace de arriba.</p>' : ''}
+  </div>`;
+  const m = $('#modal');
+  m.querySelector('[data-close]').onclick = () => m.close();
+  const after = () => { m.close(); refresh().then(() => go(currentTab)); };
+  $('#bSave').onclick = async () => {
+    const f = new FormData($('#bEdit')); const data = Object.fromEntries(f.entries());
+    if (!isBlock) data.paid = !!f.get('paid');
+    if (await act(api(`/api/admin/bookings/${b.id}`, 'PATCH', data), 'Guardado')) after();
+  };
+  $('#bConfirm') && ($('#bConfirm').onclick = async () => { if (await act(api(`/api/admin/bookings/${b.id}`, 'PATCH', { status: 'confirmed' }), 'Reserva confirmada')) after(); });
+  $('#bCancel') && ($('#bCancel').onclick = async () => { if (!confirm(isBlock ? '¿Quitar este bloqueo?' : '¿Cancelar esta reserva? Las fechas quedarán libres.')) return; if (await act(api(`/api/admin/bookings/${b.id}`, 'PATCH', { status: 'cancelled' }), isBlock ? 'Bloqueo quitado' : 'Reserva cancelada')) after(); });
+  m.showModal();
+}
+
+$('#newBooking').onclick = () => bookingForm({});
+function bookingForm({ checkin = '', checkout = '' }) {
+  $('#modalBody').innerHTML = `<div class="drawer-h"><h3>Nueva reserva manual</h3><button class="x" data-close>×</button></div>
+  <div class="drawer-b"><p class="hint" style="margin-top:0">Para reservas por teléfono, WhatsApp o clientes que repiten. Bloquea las fechas en la web y en Airbnb/Booking (vía iCal).</p>
+  <form id="nb" class="fgrid" style="grid-template-columns:1fr 1fr;margin-top:14px">
+    <label>Entrada<input type="date" name="checkin" value="${checkin}" required></label><label>Salida<input type="date" name="checkout" value="${checkout}" required></label>
+    <label class="span2">Nombre<input name="name" required></label>
+    <label>Teléfono<input name="phone"></label><label>Email<input name="email" type="email"></label>
+    <label>Huéspedes<input name="guests" type="number" min="1" value="2"></label>
+    <label>Total € (vacío = precio de tarifa)<input name="total" inputmode="decimal" placeholder=""></label>
+    <label class="chk"><input type="checkbox" name="paid"> Ya cobrada</label>
+    <label class="span2">Nota interna<textarea name="internal_note" rows="2"></textarea></label>
+  </form>
+  <div id="nbQuote"></div>
+  <div class="row-btns"><button class="btn primary" id="nbSave">Crear reserva</button></div></div>`;
+  const m = $('#modal'); m.querySelector('[data-close]').onclick = () => m.close();
+  const f = $('#nb');
+  const preview = async () => {
+    if (!f.checkin.value || !f.checkout.value) return;
+    const q = await api('/api/admin/quote', 'POST', { unit: unitId, checkin: f.checkin.value, checkout: f.checkout.value, guests: f.guests.value });
+    $('#nbQuote').innerHTML = q.ok ? `<div class="lines">${q.lines.map(l => `<div class="r"><span>${esc(l.label)}</span><span>${eur(l.amount)}</span></div>`).join('')}<div class="r t"><span>Precio de tarifa</span><span>${eur(q.total)}</span></div></div>` : `<div class="warn">${esc(q.error)}</div>`;
+    f.total.placeholder = q.ok ? toEuros(q.total) : '';
+  };
+  f.checkin.onchange = f.checkout.onchange = f.guests.onchange = preview; preview();
+  $('#nbSave').onclick = async () => {
+    if (!f.reportValidity()) return;
+    const d = Object.fromEntries(new FormData(f).entries()); d.paid = !!f.paid.checked; d.unit_id = unitId; d.source = 'manual';
+    let r = await api('/api/admin/bookings', 'POST', d);
+    if (!r.ok && /no está disponible/.test(r.error || '') && confirm('Hay noches ocupadas en esas fechas. ¿Crear la reserva igualmente?')) r = await api('/api/admin/bookings', 'POST', { ...d, force: true });
+    if (!r.ok) return toast(r.error, true);
+    toast('Reserva creada ' + r.ref); m.close(); refresh().then(() => go(currentTab));
+  };
+  m.showModal();
+}
+
+// ---------- TARIFAS ----------
+function renderTarifas() {
+  const u = unit(); const f = $('#unitForm');
+  for (const k of ['base_price', 'weekend_price', 'cleaning_fee', 'extra_guest_fee']) f[k].value = toEuros(u[k]);
+  for (const k of ['min_nights', 'max_nights', 'max_guests', 'base_guests', 'min_advance_days', 'max_advance_days', 'last_minute_days', 'early_bird_days']) f[k].value = u[k] ?? '';
+  for (const k of ['weekly_discount', 'monthly_discount', 'last_minute_discount', 'early_bird_discount']) f[k].value = u[k] ? String(u[k]).replace('.', ',') : '';
+  daysPick(f.querySelector('[data-name="weekend_nights"]'), String(u.weekend_nights).split(',').filter(Boolean));
+  daysPick(f.querySelector('[data-name="checkin_days"]'), String(u.checkin_days).split(',').filter(x => x !== ''));
+  const seasons = S.seasons.filter(s => s.unit_id === u.id);
+  $('#seasonTable').innerHTML = '<thead><tr><th>Temporada</th><th>Desde</th><th>Hasta (última noche)</th><th class="num">Noche</th><th class="num">Finde</th><th class="num">Mín.</th><th class="num">Prioridad</th><th></th></tr></thead><tbody>'
+    + (seasons.length ? seasons.map(s => `<tr class="click" data-sid="${s.id}"><td><span class="swatch" style="background:${esc(s.color)}"></span><b>${esc(s.name)}</b></td><td>${fd(s.start_date, { day: 'numeric', month: 'short', year: 'numeric' })}</td><td>${fd(s.end_date, { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+      <td class="num">${eur(s.price)}</td><td class="num">${s.weekend_price != null ? eur(s.weekend_price) : '—'}</td><td class="num">${s.min_nights ?? '—'}</td><td class="num">${s.priority}</td><td class="num"><button class="linkbtn" data-del="${s.id}">Borrar</button></td></tr>`).join('')
+      : '<tr><td colspan="8" class="empty">Sin temporadas: se usa siempre el precio base</td></tr>') + '</tbody>';
+  $$('#seasonTable [data-sid]').forEach(tr => tr.onclick = e => { if (!e.target.dataset.del) seasonForm(seasons.find(s => s.id === Number(tr.dataset.sid))); });
+  $$('#seasonTable [data-del]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar esta temporada?') && await act(api('/api/admin/seasons/' + b.dataset.del, 'DELETE'), 'Temporada borrada')) { await refresh(); renderTarifas(); } });
+  if (!$('#simIn').value) { $('#simIn').value = addDays(S.today, 14); $('#simOut').value = addDays(S.today, 16); }
+}
+$('#unitForm').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target; const d = Object.fromEntries(new FormData(f).entries());
+  d.weekend_nights = daysValue(f.querySelector('[data-name="weekend_nights"]')).join(',');
+  d.checkin_days = daysValue(f.querySelector('[data-name="checkin_days"]')).join(',');
+  if (!d.checkin_days) return toast('Elige al menos un día de entrada', true);
+  if (Number(d.base_guests) > Number(d.max_guests)) return toast('Los huéspedes incluidos no pueden superar el máximo', true);
+  if (await act(api('/api/admin/units/' + unitId, 'PUT', d), 'Tarifas guardadas')) { await refresh(); renderTarifas(); }
+};
+$('#addSeason').onclick = () => seasonForm(null);
+function seasonForm(s) {
+  const COLORS = ['#c2410c', '#b45309', '#15803d', '#0e7490', '#7c3aed', '#be185d', '#4b5563'];
+  $('#modalBody').innerHTML = `<div class="drawer-h"><h3>${s ? 'Editar temporada' : 'Nueva temporada'}</h3><button class="x" data-close>×</button></div>
+  <div class="drawer-b"><form id="sf" class="fgrid" style="grid-template-columns:1fr 1fr">
+    <label class="span2">Nombre<input name="name" required value="${esc(s?.name || '')}" placeholder="Verano, Semana Santa, Navidad…"></label>
+    <label>Primera noche<input type="date" name="start_date" required value="${s?.start_date || ''}"></label>
+    <label>Última noche<input type="date" name="end_date" required value="${s?.end_date || ''}"></label>
+    <label>Precio noche €<input name="price" inputmode="decimal" required value="${s ? toEuros(s.price) : ''}"></label>
+    <label>Precio finde € (opcional)<input name="weekend_price" inputmode="decimal" value="${s?.weekend_price != null ? toEuros(s.weekend_price) : ''}"></label>
+    <label>Estancia mínima (opcional)<input name="min_nights" type="number" min="1" value="${s?.min_nights ?? ''}"></label>
+    <label>Prioridad (si se solapan, gana la mayor)<input name="priority" type="number" value="${s?.priority ?? 0}"></label>
+    <div class="field span2"><span>Color</span><div class="days-pick" id="colors">${COLORS.map(c => `<button type="button" data-c="${c}" class="${(s?.color || COLORS[0]) === c ? 'on' : ''}" style="background:${c};border-color:${c};width:34px;height:28px"></button>`).join('')}</div></div>
+  </form><div class="row-btns"><button class="btn primary" id="sfSave">Guardar</button></div></div>`;
+  const m = $('#modal'); m.querySelector('[data-close]').onclick = () => m.close();
+  let color = s?.color || COLORS[0];
+  $('#colors').onclick = e => { const b = e.target.closest('[data-c]'); if (!b) return; color = b.dataset.c; $$('#colors button').forEach(x => x.classList.toggle('on', x === b)); };
+  $('#sfSave').onclick = async () => {
+    const f = $('#sf'); if (!f.reportValidity()) return;
+    const d = { ...Object.fromEntries(new FormData(f).entries()), color, unit_id: unitId };
+    if (await act(api(s ? '/api/admin/seasons/' + s.id : '/api/admin/seasons', s ? 'PUT' : 'POST', d), 'Temporada guardada')) { m.close(); await refresh(); renderTarifas(); }
+  };
+  m.showModal();
+}
+$('#simGo').onclick = async () => {
+  const q = await api('/api/admin/quote', 'POST', { unit: unitId, checkin: $('#simIn').value, checkout: $('#simOut').value, guests: $('#simGuests').value, promo: $('#simPromo').value });
+  $('#simOutBox').innerHTML = q.ok
+    ? `<div class="lines">${q.lines.map(l => `<div class="r"><span>${esc(l.label)}</span><span>${eur(l.amount)}</span></div>`).join('')}<div class="r t"><span>Total que verá el cliente</span><span>${eur(q.total)}</span></div></div>
+       ${q.promoError ? `<div class="warn">${esc(q.promoError)}</div>` : ''}<p class="muted small">Noche a noche: ${q.nightly.map(n => `${fd(n.date)} ${eurShort(n.price)} (${esc(n.source)})`).join(' · ')}</p>`
+    : `<div class="warn">${esc(q.error)}</div>`;
+};
+
+// ---------- CÓDIGOS ----------
+function renderPromos() {
+  $('#promoTable').innerHTML = '<thead><tr><th>Código</th><th>Descuento</th><th>Fechas de entrada</th><th class="num">Mín. noches</th><th class="num">Usos</th><th>Nota</th><th>Activo</th><th></th></tr></thead><tbody>'
+    + (S.promos.length ? S.promos.map(p => `<tr><td><b>${esc(p.code)}</b></td><td>${p.kind === 'pct' ? p.value + ' %' : eur(p.value)}</td><td>${p.valid_from || p.valid_to ? `${p.valid_from ? fd(p.valid_from) : '…'} – ${p.valid_to ? fd(p.valid_to) : '…'}` : 'Siempre'}</td>
+      <td class="num">${p.min_nights || '—'}</td><td class="num">${p.uses}${p.max_uses ? ' / ' + p.max_uses : ''}</td><td class="muted">${esc(p.note)}</td>
+      <td><label class="chk"><input type="checkbox" data-toggle="${p.id}" ${p.active ? 'checked' : ''}></label></td><td class="num"><button class="linkbtn" data-pdel="${p.id}">Borrar</button></td></tr>`).join('')
+      : '<tr><td colspan="8" class="empty">Aún no hay códigos</td></tr>') + '</tbody>';
+  $$('[data-toggle]').forEach(c => c.onchange = async () => { await act(api('/api/admin/promos/' + c.dataset.toggle, 'PATCH', { active: c.checked }), c.checked ? 'Código activado' : 'Código desactivado'); await refresh(); });
+  $$('[data-pdel]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar el código?') && await act(api('/api/admin/promos/' + b.dataset.pdel, 'DELETE'), 'Código borrado')) { await refresh(); renderPromos(); } });
+}
+$('#promoForm').onsubmit = async e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(e.target).entries());
+  if (await act(api('/api/admin/promos', 'POST', d), 'Código creado')) { e.target.reset(); await refresh(); renderPromos(); }
+};
+
+// ---------- SINCRONIZACIÓN ----------
+function renderSync() {
+  const u = unit();
+  $('#exportUrl').value = `${S.origin}/ical/${u.ical_token}.ics`;
+  const feeds = S.feeds.filter(f => f.unit_id === u.id);
+  $('#feedTable').innerHTML = '<thead><tr><th>Canal</th><th>Enlace</th><th>Última sincronización</th><th>Estado</th><th></th></tr></thead><tbody>'
+    + (feeds.length ? feeds.map(f => `<tr><td><b>${esc(f.name)}</b></td><td class="muted small" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.url)}</td><td>${esc(f.last_sync || '—')}</td>
+      <td><span class="tag ${String(f.last_status).startsWith('OK') ? 't-confirmed' : 't-pending'}">${esc(f.last_status || 'Pendiente')}</span></td><td class="num"><button type="button" class="linkbtn" data-fdel="${f.id}">Quitar</button></td></tr>`).join('')
+      : '<tr><td colspan="5" class="empty">Sin calendarios conectados</td></tr>') + '</tbody>';
+  $$('[data-fdel]').forEach(b => b.onclick = async () => { if (confirm('¿Quitar este calendario? Sus bloqueos desaparecerán.') && await act(api('/api/admin/feeds/' + b.dataset.fdel, 'DELETE'), 'Calendario quitado')) { await refresh(); renderSync(); } });
+}
+$('#copyExport').onclick = () => { navigator.clipboard.writeText($('#exportUrl').value); toast('Enlace copiado'); };
+$('#feedForm').onsubmit = async e => {
+  e.preventDefault();
+  const d = { ...Object.fromEntries(new FormData(e.target).entries()), unit_id: unitId };
+  const r = await act(api('/api/admin/feeds', 'POST', d));
+  if (r) { toast(r.sync.ok ? `Conectado · ${r.sync.count} bloqueos importados` : 'Añadido, pero falló: ' + r.sync.error, !r.sync.ok); e.target.url.value = ''; await refresh(); renderSync(); }
+};
+$('#syncNow').onclick = async () => {
+  const r = await act(api('/api/admin/feeds/sync', 'POST', {}));
+  if (r) { const bad = r.results.filter(x => !x.ok); toast(bad.length ? `Errores en: ${bad.map(x => x.name).join(', ')}` : 'Sincronizado', !!bad.length); await refresh(); renderSync(); }
+};
+
+// ---------- WEB Y FOTOS ----------
+function renderWeb() {
+  const f = $('#settingsForm');
+  for (const el of f.elements) if (el.name && S.settings[el.name] != null) el.value = S.settings[el.name];
+  const u = unit(); const uf = $('#unitInfoForm');
+  for (const k of ['name', 'bedrooms', 'beds', 'bathrooms', 'summary', 'description']) uf[k].value = u[k] ?? '';
+  uf.active.value = String(u.active);
+  renderPhotos();
+}
+function renderPhotos() {
+  const hero = Number(S.settings.hero_photo) || S.photos[0]?.id;
+  $('#photos').innerHTML = S.photos.map((p, i) => `<div class="photo ${p.id === hero ? 'hero' : ''}" draggable="true" data-pid="${p.id}"><img src="/foto/${p.id}" alt=""><span class="idx">${i + 1}${p.unit_id ? ' · ' + esc((S.units.find(u => u.id === p.unit_id) || {}).name || '') : ''}</span>
+    <div class="acts"><button type="button" data-hero="${p.id}" class="${p.id === hero ? 'on' : ''}" title="Usar de portada">★</button><button type="button" data-cap="${p.id}" title="Pie de foto">✎</button><button type="button" data-pdel="${p.id}" title="Borrar">🗑</button></div></div>`).join('')
+    || '<p class="muted" style="grid-column:1/-1">Aún no hay fotos. La web muestra un fondo de color hasta que subas alguna.</p>';
+  $$('[data-hero]').forEach(b => b.onclick = async () => { await act(api('/api/admin/settings', 'PUT', { hero_photo: b.dataset.hero }), 'Portada cambiada'); await refresh(); renderPhotos(); });
+  $$('#photos [data-pdel]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar esta foto?') && await act(api('/api/admin/photos/' + b.dataset.pdel, 'DELETE'), 'Foto borrada')) { await refresh(); renderPhotos(); } });
+  $$('[data-cap]').forEach(b => b.onclick = async () => {
+    const p = S.photos.find(x => x.id === Number(b.dataset.cap));
+    const cap = prompt('Pie de foto (se ve al ampliarla)', p.caption || ''); if (cap === null) return;
+    await act(api('/api/admin/photos/' + p.id, 'PATCH', { caption: cap, unit_id: p.unit_id }), 'Guardado'); await refresh();
+  });
+  // Arrastrar para ordenar
+  let dragEl = null;
+  $$('.photo').forEach(el => {
+    el.ondragstart = () => { dragEl = el; el.classList.add('dragging'); };
+    el.ondragend = async () => { el.classList.remove('dragging'); const ids = $$('.photo').map(x => Number(x.dataset.pid)); await api('/api/admin/photos/order', 'PUT', { ids }); await refresh(); renderPhotos(); };
+    el.ondragover = e => { e.preventDefault(); if (!dragEl || dragEl === el) return; const r = el.getBoundingClientRect(); el.parentNode.insertBefore(dragEl, e.clientX < r.left + r.width / 2 ? el : el.nextSibling); };
+  });
+}
+function resizeImage(file, max = 2000, quality = .84) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      let q = quality, data = c.toDataURL('image/jpeg', q);
+      while (data.length > 2200000 && q > .5) { q -= .08; data = c.toDataURL('image/jpeg', q); }
+      URL.revokeObjectURL(img.src); res(data);
+    };
+    img.onerror = () => rej(new Error('No se pudo leer ' + file.name));
+    img.src = URL.createObjectURL(file);
+  });
+}
+$('#photoInput').onchange = async e => {
+  const files = [...e.target.files]; let n = 0;
+  for (const file of files) {
+    $('#uploadStatus').textContent = `Subiendo ${++n} de ${files.length}…`;
+    try {
+      const data = await resizeImage(file);
+      const r = await api('/api/admin/photos', 'POST', { data });
+      if (!r.ok) toast(r.error, true);
+    } catch (err) { toast(err.message, true); }
+  }
+  $('#uploadStatus').textContent = ''; e.target.value = '';
+  await refresh(); renderPhotos(); toast('Fotos subidas');
+};
+$('#settingsForm').onsubmit = async e => {
+  e.preventDefault();
+  if (await act(api('/api/admin/settings', 'PUT', Object.fromEntries(new FormData(e.target).entries())), 'Textos guardados')) await refresh();
+};
+$('#unitInfoForm').onsubmit = async e => {
+  e.preventDefault();
+  if (await act(api('/api/admin/units/' + unitId, 'PUT', Object.fromEntries(new FormData(e.target).entries())), 'Alojamiento guardado')) { await refresh(); renderWeb(); }
+};
+$('#addUnit').onclick = async () => {
+  const name = prompt('Nombre de la nueva suite', 'Suite 2'); if (!name) return;
+  const r = await act(api('/api/admin/units', 'POST', { name, base_price: toEuros(unit().base_price) }), 'Suite creada');
+  if (r) { unitId = r.id; localStorage.setItem('ts_unit', unitId); await refresh(); go('tarifas'); }
+};
+
+boot();

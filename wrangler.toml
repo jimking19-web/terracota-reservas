@@ -1,0 +1,21 @@
+name = "terracota-reservas"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "terracota-reservas"
+database_id = "aedf20b9-cb36-4f20-a5ec-97f0eeb35959"
+
+# Sincroniza Airbnb/Booking y libera reservas no pagadas cada 15 minutos
+[triggers]
+crons = ["*/15 * * * *"]
+
+[observability]
+enabled = true

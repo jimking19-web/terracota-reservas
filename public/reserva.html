@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tu reserva · Terracota Suites</title><meta name="robots" content="noindex">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+ body{background:var(--sand);min-height:100svh;display:grid;place-items:center;padding:24px}
+ .card{background:#fff;border-radius:28px;box-shadow:var(--shadow);padding:clamp(26px,5vw,48px);width:min(560px,100%);text-align:center}
+ .icon{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;margin:0 auto 18px;font-size:34px}
+ .ok{background:#e6f2e3;color:#3f7a3a}.wait{background:var(--terra-l);color:var(--terra)}.ko{background:#fbe6e4;color:#b42318}
+ .ref{display:inline-block;background:var(--sand);border-radius:999px;padding:6px 14px;font-weight:700;letter-spacing:.08em;margin-bottom:18px}
+ .box{text-align:left;background:var(--cream);border:1px solid var(--line);border-radius:16px;padding:18px;margin:22px 0}
+ .box .row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:14.5px;color:var(--ink-2)}
+ .box .row.t{border-top:1.5px solid var(--line);margin-top:8px;padding-top:12px;color:var(--ink);font-weight:800}
+</style></head>
+<body><div class="card" id="card"><p class="muted">Cargando tu reserva…</p></div>
+<script type="module">
+const $=s=>document.querySelector(s);
+const eur=c=>(c/100).toLocaleString('es-ES',{style:'currency',currency:'EUR'});
+const fd=s=>new Date(s+'T00:00:00Z').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const p=new URLSearchParams(location.search); const ref=p.get('ref');
+let tries=0;
+async function load(){
+  if(!ref){$('#card').innerHTML='<p>Reserva no encontrada.</p><a class="btn btn-terra" href="/">Volver</a>';return}
+  const r=await fetch('/api/booking/'+encodeURIComponent(ref)).then(r=>r.json());
+  if(!r.ok){$('#card').innerHTML=`<p>${esc(r.error)}</p><a class="btn btn-terra" href="/">Volver</a>`;return}
+  // Al volver de Stripe el webhook puede tardar unos segundos
+  if(r.status==='pending'&&r.mode==='stripe'&&p.get('pago')==='ok'&&tries<8){tries++;$('#card').innerHTML='<div class="icon wait">⏳</div><h1 class="display small">Confirmando tu pago…</h1><p class="muted">Un momento, por favor.</p>';return setTimeout(load,2000)}
+  const lines=r.lines.map(l=>`<div class="row"><span>${esc(l.label)}</span><span>${eur(l.amount)}</span></div>`).join('')+`<div class="row t"><span>Total</span><span>${eur(r.total)}</span></div>`;
+  const info=`<div class="box"><div class="row"><span>Alojamiento</span><b>${esc(r.unit)}</b></div><div class="row"><span>Entrada</span><b>${fd(r.checkin)}</b></div><div class="row"><span>Salida</span><b>${fd(r.checkout)}</b></div><div class="row"><span>Huéspedes</span><b>${r.guests}</b></div>${lines}</div>`;
+  let head;
+  if(r.status==='confirmed') head=`<div class="icon ok">✓</div><p class="eyebrow">Reserva confirmada</p><h1 class="display small">¡Gracias${r.name?', '+esc(r.name):''}! Te esperamos</h1><p class="muted">Te hemos enviado la confirmación por email. Unos días antes de tu llegada recibirás las indicaciones de acceso.</p>`;
+  else if(r.status==='pending'&&r.mode==='request') head=`<div class="icon wait">✉</div><p class="eyebrow">Solicitud recibida</p><h1 class="display small">Gracias${r.name?', '+esc(r.name):''}</h1><p class="muted">Hemos bloqueado las fechas y te contactaremos en breve para confirmar la reserva y el pago.</p>`;
+  else if(r.status==='pending') head=`<div class="icon wait">!</div><p class="eyebrow">Pago pendiente</p><h1 class="display small">Tu reserva aún no está pagada</h1><p class="muted">${p.get('pago')==='cancelado'?'Has cancelado el pago. ':''}Las fechas quedan guardadas unos minutos; si quieres, vuelve a la web y reserva de nuevo.</p>`;
+  else head=`<div class="icon ko">×</div><p class="eyebrow">Reserva no completada</p><h1 class="display small">${r.status==='cancelled'?'Reserva cancelada':'El tiempo para pagar ha caducado'}</h1><p class="muted">No se ha realizado ningún cargo. Puedes volver a intentarlo cuando quieras.</p>`;
+  $('#card').innerHTML=head+`<div class="ref">${esc(r.ref)}</div>`+info+`<a class="btn btn-ghost" href="/">Volver a la web</a>`;
+}
+load();
+</script></body></html>
