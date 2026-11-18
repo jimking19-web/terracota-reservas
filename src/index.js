@@ -2,6 +2,7 @@
 import { addDays, diffDays, isDate, todayMadrid } from './dates.js';
 import { calendar, getUnit, loadContext, night, quote, money } from './pricing.js';
 import { exportIcal, syncAll, syncFeed } from './ical.js';
+import { track, stats, cleanup as cleanupAnalytics } from './analytics.js';
 import { createCheckout, verifyWebhook, stripeRequest } from './stripe.js';
 import { runDeposits, placeHold, releaseHold, captureHold, depositCheckout, depositLink, releaseDate } from './deposit.js';
 import { guestEmail, ownerEmail, sendMail, mailEnabled } from './mail.js';
@@ -45,7 +46,7 @@ function makeRef() {
 const sqlNow = (offsetMs = 0) => new Date(Date.now() + offsetMs).toISOString().replace('T', ' ').slice(0, 19);
 
 // Claves guardadas en D1 que NUNCA se envían al navegador
-const SECRET_KEYS = ['admin_hash', 'setup_code', 'stripe_secret_key', 'stripe_webhook_secret', 'stripe_webhook_id', 'stripe_account', 'smtp_user', 'smtp_pass', 'link_secret'];
+const SECRET_KEYS = ['admin_hash', 'setup_code', 'stripe_secret_key', 'stripe_webhook_secret', 'stripe_webhook_id', 'stripe_account', 'smtp_user', 'smtp_pass', 'link_secret', 'analytics_salt'];
 
 async function getSettings(db, withSecrets = false) {
   const rows = (await db.prepare('SELECT key, value FROM settings').all()).results;
@@ -469,6 +470,8 @@ async function adminApi(req, env, url, path) {
     return json({ ok: true, url: await invoiceUrl(db, url.origin, bk.ref), number: bk.invoice_no });
   }
 
+  if (path === '/api/admin/analytics' && req.method === 'GET') return json(await stats(db, parseInt(url.searchParams.get('days') || '30', 10)));
+
   if (path === '/api/admin/state' && req.method === 'GET') {
     if (!/localhost|127\.0\.0\.1/.test(url.host)) await setSetting(db, 'site_url', url.origin);
     const [units, seasons, promos, feeds, photos, settings, pendingCount, extras] = await Promise.all([
@@ -751,6 +754,7 @@ export default {
     try {
       if (path.startsWith('/api/')) env = await withConfig(env);
       if (path.startsWith('/api/admin/')) return await adminApi(req, env, url, path);
+      if (path === '/api/t' && req.method === 'POST') return await track(req, env, url);
       if (path.startsWith('/api/')) {
         const r = await publicApi(req, env, url, path);
         return r || bad('Ruta no encontrada', 404);
@@ -795,7 +799,7 @@ export default {
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
-      await Promise.all([syncAll(env.DB), expirePending(env.DB)]);
+      await Promise.all([syncAll(env.DB), expirePending(env.DB), cleanupAnalytics(env.DB).catch(() => {})]);
       const cfg = await withConfig(env);
       try { await runDeposits(cfg, await getSettings(env.DB)); } catch (e) { console.error('fianzas', e); }
     })());

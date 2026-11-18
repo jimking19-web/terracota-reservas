@@ -30,6 +30,19 @@ function iconFor(text) {
 
 const state = { site: null, unit: null, cal: new Map(), calFrom: null, monthOffset: 0, checkin: null, checkout: null, guests: 2, promo: '', extras: {}, quote: null, today: null, picking: 'checkin' };
 
+// ---------- estadísticas (sin cookies ni almacenamiento) ----------
+const SID = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+const T0 = Date.now();
+const sentOnce = new Set();
+function track(t, d, once = false) {
+  try {
+    const key = t + '|' + (typeof d === 'object' ? '' : d);
+    if (once) { if (sentOnce.has(key)) return; sentOnce.add(key); }
+    const body = JSON.stringify({ t, d, s: SID });
+    if (!(navigator.sendBeacon && navigator.sendBeacon('/api/t', new Blob([body], { type: 'text/plain' })))) fetch('/api/t', { method: 'POST', body, keepalive: true });
+  } catch {}
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json' }, body: opts.body ? JSON.stringify(opts.body) : undefined });
   return res.json();
@@ -127,6 +140,7 @@ function openLightbox(i) {
   lbIndex = (i + state.photos.length) % state.photos.length;
   const p = state.photos[lbIndex];
   $('#lbImg').src = `/foto/${p.id}`; $('#lbCap').textContent = p.caption || '';
+  track('foto', p.id);
   if (!$('#lightbox').open) $('#lightbox').showModal();
 }
 
@@ -206,6 +220,7 @@ function renderCalendar() {
 function pickDay(d) {
   if (state.picking === 'checkout' && state.checkin && canCheckout(d)) {
     state.checkout = d; state.picking = 'checkin';
+    track('fechas', `${state.checkin}|${diff(state.checkin, d)}`);
     getQuote();
   } else {
     const c = state.cal.get(d);
@@ -286,6 +301,7 @@ function renderExtras(q) {
 // ---------- reserva ----------
 function openGuestForm() {
   const q = state.quote; if (!q?.ok) return;
+  track('reservar', q.total);
   $('#trip').innerHTML = `<div><b>${fdate(q.checkin)} → ${fdate(q.checkout)}</b><br>${q.nights} noches · ${q.guests} huéspedes</div><div><b>${eur(q.total, 2)}</b><br><span class="muted">total</span></div>`;
   $('#payBtn').textContent = state.site.payments ? `Pagar ${eur(q.total, 2)}` : 'Enviar solicitud de reserva';
   $('#trip').insertAdjacentHTML('beforeend', q.deposit > 0 ? `<div class="deposit-note full">+ fianza de ${eur(q.deposit)} retenida (no cobrada) en tu tarjeta el día antes de la llegada</div>` : '');
@@ -307,7 +323,7 @@ async function submitBooking(e) {
   const btn = $('#payBtn'); const label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Procesando…'; err.textContent = '';
   const r = await api('/api/book', { method: 'POST', body: { ...data, unit: state.unit.slug, checkin: state.checkin, checkout: state.checkout, guests: state.guests, promo: state.promo, extras: state.extras, expectedTotal: state.quote.total } });
-  if (r.ok && r.redirect) { location.href = r.redirect; return; }
+  if (r.ok && r.redirect) { track('pago', state.quote.total); location.href = r.redirect; return; }
   btn.disabled = false; btn.textContent = label;
   err.textContent = r.error || 'No se pudo completar la reserva';
   if (r.quote) { state.quote = r.quote; renderSummary(); openGuestForm(); }
@@ -336,7 +352,7 @@ function bind() {
   $$('[data-open]').forEach(b => b.onclick = () => goToCalendar(b.dataset.open));
   $('#sbGo').onclick = () => goToCalendar('checkin');
   $('#promoToggle').onclick = () => { $('#promoRow').hidden = !$('#promoRow').hidden; $('#promoInput').focus(); };
-  const applyPromo = () => { state.promo = $('#promoInput').value.trim().toUpperCase(); if (state.checkin && state.checkout) getQuote(); else { $('#promoMsg').textContent = 'Elige fechas para aplicar el código'; } };
+  const applyPromo = () => { state.promo = $('#promoInput').value.trim().toUpperCase(); if (state.promo) track('codigo', state.promo); if (state.checkin && state.checkout) getQuote(); else { $('#promoMsg').textContent = 'Elige fechas para aplicar el código'; } };
   $('#promoApply').onclick = applyPromo;
   $('#promoInput').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); applyPromo(); } };
   $('#bookBtn').onclick = openGuestForm;
@@ -344,11 +360,26 @@ function bind() {
   $$('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
   $('#gallery').onclick = e => { const b = e.target.closest('button'); if (b && state.photos[Number(b.dataset.i)]) openLightbox(Number(b.dataset.i)); };
   $('#openGallery').onclick = () => openLightbox(0);
-  $('#galTabs').onclick = e => { const b = e.target.closest('button'); if (b) showGallery(b.dataset.cat); };
+  $('#galTabs').onclick = e => { const b = e.target.closest('button'); if (b) { showGallery(b.dataset.cat); track('galeria', b.dataset.cat || 'todas'); } };
   $('#lbPrev').onclick = () => openLightbox(lbIndex - 1);
   $('#lbNext').onclick = () => openLightbox(lbIndex + 1);
   $('#lightbox').addEventListener('keydown', e => { if (e.key === 'ArrowLeft') openLightbox(lbIndex - 1); if (e.key === 'ArrowRight') openLightbox(lbIndex + 1); });
   $('#lightbox').addEventListener('click', e => { if (e.target.id === 'lightbox') $('#lightbox').close(); });
+
+  // Estadísticas: secciones vistas, WhatsApp, contacto, preguntas y tiempo en la web
+  const secIO = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) track('seccion', e.target.id, true); }), { threshold: .35 });
+  ['alojamiento', 'galeria', 'incluye', 'reservar', 'ubicacion', 'faq'].forEach(id => { const el = document.getElementById(id); if (el) secIO.observe(el); });
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a'); if (!a) return;
+    const h = a.getAttribute('href') || '';
+    if (h.includes('wa.me')) track('whatsapp', a.id === 'waFloat' ? 'botón flotante' : a.id === 'faqWa' ? 'preguntas' : 'contacto');
+    else if (h.startsWith('tel:')) track('contacto', 'teléfono');
+    else if (h.startsWith('mailto:')) track('contacto', 'email');
+    else if (h.includes('instagram.com')) track('contacto', 'instagram');
+    else if (a.id === 'directions') track('contacto', 'cómo llegar');
+  }, true);
+  $('#faqList').addEventListener('toggle', e => { if (e.target.open) track('faq', e.target.querySelector('summary')?.textContent || '', true); }, true);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') track('salida', Math.round((Date.now() - T0) / 1000)); });
 
   const nav = $('#nav');
   const onScroll = () => nav.classList.toggle('solid', scrollY > 60);
@@ -376,6 +407,7 @@ function renderUnitsPicker() {
 }
 
 async function init() {
+  { const p = new URLSearchParams(location.search); track('visita', { ref: document.referrer, utm: p.get('utm_source') || p.get('ref') || '', lang: navigator.language }); }
   const site = await api('/api/site');
   state.site = site; state.today = site.today;
   const wanted = new URLSearchParams(location.search).get('suite');

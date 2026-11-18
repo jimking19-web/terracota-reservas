@@ -67,48 +67,7 @@ $('#loginForm').onsubmit = async e => {
   } else r = await api('/api/admin/login', 'POST', { password: $('#pw').value });
   if (!r.ok) { $('#loginErr').textContent = r.error; return; }
   history.replaceState(null, '', '/admin/' + location.hash);
-  $('#login').hidden = true; // ---------- PAGOS ----------
-function renderPagos() {
-  const c = $('#stripeCard');
-  if (S.stripe) {
-    c.innerHTML = `<div class="card-h"><h2>Pagos con tarjeta (Stripe)</h2></div>
-      <div class="stripe-ok">✓ Conectado${S.stripeAccount ? ' a ' + esc(S.stripeAccount) : ''} · ${S.stripeMode === 'live' ? 'MODO REAL: se cobra de verdad' : 'modo de prueba'}</div>
-      ${S.stripeMode === 'test' ? '<p class="hint">Haz una reserva de prueba en tu web con la tarjeta <b>4242 4242 4242 4242</b>, caducidad cualquiera futura y CVC cualquiera. Cuando funcione, conecta la clave real (sk_live_…) para empezar a cobrar.</p>' : ''}
-      ${S.stripeFromPanel ? `<div class="row-btns"><button class="btn" id="stripeChange">${S.stripeMode === 'test' ? 'Pasar a modo real (clave live)' : 'Cambiar clave'}</button><button class="btn danger-ghost" id="stripeOff">Desconectar</button></div>` : '<p class="hint">Configurado desde Cloudflare.</p>'}
-      <div id="stripeFormBox"></div>`;
-    $('#stripeChange') && ($('#stripeChange').onclick = () => stripeForm(S.stripeMode === 'test' ? 'live' : S.stripeMode));
-    $('#stripeOff') && ($('#stripeOff').onclick = async () => { if (confirm('¿Desconectar Stripe? Las reservas pasarán a ser solicitudes sin pago.') && await act(api('/api/admin/stripe', 'DELETE'), 'Stripe desconectado')) { await refresh(); renderPagos(); } });
-  } else {
-    c.innerHTML = `<div class="card-h"><h2>Pagos con tarjeta (Stripe)</h2></div><div id="stripeFormBox"></div>`;
-    stripeForm('test');
-  }
-  $('#pwForm').hidden = S.passwordInCloudflare;
-  renderMail(); renderBilling();
-}
-function stripeForm(mode) {
-  const live = mode === 'live';
-  $('#stripeFormBox').innerHTML = `<ol class="steps">
-      <li>Abre <a href="https://dashboard.stripe.com/${live ? '' : 'test/'}apikeys" target="_blank" rel="noopener">tus claves de Stripe${live ? '' : ' (modo de prueba)'}</a> e inicia sesión.</li>
-      <li>En <b>Clave secreta</b> pulsa <b>Revelar</b> y cópiala (empieza por <b>${live ? 'sk_live_' : 'sk_test_'}</b>).</li>
-      <li>Pégala aquí abajo y pulsa <b>Conectar</b>. Yo configuro el resto (el aviso de pagos se crea solo).</li>
-    </ol>
-    <div class="copy"><input id="stripeKey" placeholder="${live ? 'sk_live_…' : 'sk_test_…'}" autocomplete="off" spellcheck="false"><button class="btn primary" id="stripeGo">Conectar</button></div>`;
-  $('#stripeGo').onclick = async () => {
-    const btn = $('#stripeGo'); btn.disabled = true; btn.textContent = 'Conectando…';
-    const r = await api('/api/admin/stripe', 'POST', { key: $('#stripeKey').value });
-    btn.disabled = false; btn.textContent = 'Conectar';
-    if (!r.ok) return toast(r.error, true);
-    toast(`Stripe conectado (${r.mode === 'live' ? 'modo real' : 'modo prueba'})`); await refresh(); renderPagos();
-  };
-}
-$('#pwForm').onsubmit = async e => {
-  e.preventDefault();
-  const d = Object.fromEntries(new FormData(e.target).entries());
-  if (d.password !== d.password2) return toast('Las contraseñas nuevas no coinciden', true);
-  if (await act(api('/api/admin/password', 'POST', d), 'Contraseña cambiada')) e.target.reset();
-};
-
-boot();
+  $('#login').hidden = true; boot();
 };
 $('#logout').onclick = async () => { await api('/api/admin/logout', 'POST'); location.reload(); };
 
@@ -121,7 +80,7 @@ function go(tab) {
   $('#title').textContent = $(`#tabs [data-tab="${tab}"]`).textContent.replace(/\d+$/, '').trim().replace(/^[^\wÁÉÍÓÚáéíóú]+/, '');
   $('.side').classList.remove('open');
   history.replaceState(null, '', '#' + tab);
-  ({ inicio: renderHome, calendario: renderCal, reservas: loadBookings, tarifas: renderTarifas, codigos: renderPromos, sincro: renderSync, web: renderWeb, pagos: renderPagos })[tab]?.();
+  ({ visitas: renderVisits, inicio: renderHome, calendario: renderCal, reservas: loadBookings, tarifas: renderTarifas, codigos: renderPromos, sincro: renderSync, web: renderWeb, pagos: renderPagos })[tab]?.();
 }
 $('#tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); };
 document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) go(g.dataset.goto); });
@@ -733,6 +692,52 @@ $('#addUnit').onclick = async () => {
   const r = await act(api('/api/admin/units', 'POST', { name, base_price: toEuros(unit().base_price) }), 'Suite creada');
   if (r) { unitId = r.id; localStorage.setItem('ts_unit', unitId); await refresh(); go('tarifas'); }
 };
+
+// ---------- VISITAS ----------
+let vDaysRange = 7;
+$('#vRange').onclick = e => { const b = e.target.closest('[data-d]'); if (!b) return; vDaysRange = Number(b.dataset.d); $$('#vRange button').forEach(x => x.classList.toggle('on', x === b)); renderVisits(); };
+const SECTION_NAMES = { alojamiento: 'El alojamiento', galeria: 'Galería', incluye: 'Qué incluye', reservar: 'Calendario y precios', ubicacion: 'Ubicación', faq: 'Preguntas frecuentes' };
+const CAT_NAMES = { todas: 'Todas', salon: 'Salón', cocina: 'Cocina', dormitorio: 'Dormitorio', bano: 'Baño', exterior: 'Alberca y patio' };
+function hbars(rows, empty = 'Aún no hay datos') {
+  if (!rows.length) return `<p class="muted">${empty}</p>`;
+  const max = Math.max(...rows.map(r => r.n), 1);
+  return rows.map(r => `<div class="hbar"><span class="lbl" title="${esc(r.name)}">${esc(r.name)}</span><span class="trk"><i style="width:${(r.n / max) * 100}%"></i></span><b>${r.n}</b></div>`).join('');
+}
+function fmtTime(sec) { if (!sec) return '—'; const m = Math.floor(sec / 60), s = sec % 60; return m ? `${m} min ${String(s).padStart(2, '0')} s` : `${s} s`; }
+async function renderVisits() {
+  const d = await api('/api/admin/analytics?days=' + vDaysRange);
+  if (!d.ok) return;
+  const f = d.funnel, t = d.totals;
+  const conv = f.visita ? ((f.reservas / f.visita) * 100).toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' %' : '—';
+  $('#vKpis').innerHTML = [['Visitantes', t.visitors || 0], ['Visitas', t.sessions || 0], ['Tiempo medio', fmtTime(d.avgTime)], ['Reservas web', `${f.reservas}${f.reservas ? ' · ' + eur(f.ingresos) : ''}`]]
+    .map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join('');
+  // por día (rellena días sin visitas)
+  const map = new Map(d.perDay.map(x => [x.day, x.v]));
+  const daysList = []; for (let x = d.from; x <= S.today; x = addDays(x, 1)) daysList.push(x);
+  const shown = daysList.length > 60 ? null : daysList;
+  if (shown) {
+    const max = Math.max(1, ...shown.map(x => map.get(x) || 0));
+    const every = Math.ceil(shown.length / 15);
+    $('#vDays').innerHTML = `<div class="daybars">${shown.map(x => { const v = map.get(x) || 0; return `<div title="${fd(x, { weekday: 'short', day: 'numeric', month: 'short' })}: ${v}">${v ? `<em>${v}</em>` : ''}<i style="height:${(v / max) * 100}%"></i></div>`; }).join('')}</div>
+      <div class="daylabels">${shown.map((x, i) => `<span>${i % every === 0 ? Number(x.slice(8)) + '/' + Number(x.slice(5, 7)) : ''}</span>`).join('')}</div>`;
+  } else {
+    const byMonth = {}; for (const r of d.perDay) byMonth[r.day.slice(0, 7)] = (byMonth[r.day.slice(0, 7)] || 0) + r.v;
+    $('#vDays').innerHTML = hbars(Object.entries(byMonth).map(([m, n]) => ({ name: fd(m + '-01', { month: 'long', year: 'numeric' }), n })));
+  }
+  const pct = (a, b) => b ? `<small>${Math.round((a / b) * 100)} %</small>` : '';
+  const steps = [['Entran en la web', f.visita], ['Llegan al calendario', f.calendario], ['Eligen fechas y ven el precio', f.fechas], ['Pulsan «Reservar»', f.reservar], ['Van a pagar', f.pago], ['Reservas confirmadas', f.reservas]];
+  const fmax = Math.max(1, f.visita);
+  $('#vFunnel').innerHTML = `<div class="funnel">${steps.map(([k, v], i) => `<div class="hbar"><span class="lbl">${k}</span><span class="trk"><i style="width:${(v / fmax) * 100}%"></i></span><b>${v}${i ? pct(v, f.visita) : ''}</b></div>`).join('')}</div><p class="hint">Conversión: <b>${conv}</b> de las visitas acaban en reserva directa.</p>`;
+  $('#vSources').innerHTML = hbars(d.sources);
+  $('#vSections').innerHTML = hbars(d.sections.map(x => ({ name: SECTION_NAMES[x.detail] || x.detail, n: x.n }))) +
+    (d.gallery.length ? `<h3>Pestañas de la galería</h3>${hbars(d.gallery.map(x => ({ name: CAT_NAMES[x.detail] || x.detail, n: x.n })))}` : '');
+  $('#vMonths').innerHTML = hbars(d.months.map(x => ({ name: fd(x.m + '-01', { month: 'long', year: 'numeric' }), n: x.n })), 'Nadie ha elegido fechas todavía') +
+    (d.nights.length ? `<h3>Noches que miran</h3>${hbars(d.nights.map(x => ({ name: `${x.nights} ${x.nights === 1 ? 'noche' : 'noches'}`, n: x.n })))}` : '');
+  $('#vPhotos').innerHTML = d.photos.length ? `<div class="vphotos">${d.photos.map(p => `<figure title="${esc(p.caption || '')}"><img src="${esc(p.src || '/foto/' + p.detail)}" loading="lazy" alt=""><figcaption>${p.n} veces</figcaption></figure>`).join('')}</div>` : '<p class="muted">Nadie ha ampliado fotos todavía</p>';
+  $('#vFaqs').innerHTML = hbars(d.faqs.map(x => ({ name: x.detail, n: x.n })), 'Nadie ha abierto preguntas todavía');
+  $('#vGeo').innerHTML = hbars(d.countries) + (d.devices.length ? `<h3>Dispositivo</h3>${hbars(d.devices.map(x => ({ name: x.device[0].toUpperCase() + x.device.slice(1), n: x.n })))}` : '');
+  $('#vContact').innerHTML = hbars(d.contact.map(x => ({ name: x.type === 'whatsapp' ? `WhatsApp (${x.detail})` : x.detail[0].toUpperCase() + x.detail.slice(1), n: x.n })), 'Nadie ha contactado desde la web todavía');
+}
 
 // ---------- PAGOS ----------
 function renderPagos() {

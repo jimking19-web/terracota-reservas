@@ -177,3 +177,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- Unidad inicial
 INSERT OR IGNORE INTO units (id, slug, name, summary, max_guests, base_guests, base_price, weekend_price, min_nights, cleaning_fee, ical_token)
 VALUES (1, 'terracota', 'Terracota Suites', 'Alojamiento con alberca en el corazón del Noroeste murciano', 4, 2, 9000, 11000, 2, 3000, lower(hex(randomblob(16))));
+
+-- Estadísticas de visitas (sin cookies ni IPs; visitante = hash diario)
+CREATE TABLE IF NOT EXISTS analytics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL, day TEXT NOT NULL, visitor TEXT NOT NULL, session TEXT NOT NULL,
+  type TEXT NOT NULL, detail TEXT, ref TEXT, country TEXT, device TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_analytics_day ON analytics(day, type);

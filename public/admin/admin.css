@@ -189,3 +189,21 @@ textarea { resize: vertical; }
 .tier { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-weight: 600; font-size: 13.5px; } .tier input { width: 80px; }
 
 .dep { background: var(--bg); border-radius: 12px; padding: 12px 14px; margin: 12px 0; font-size: 14px; }
+
+.hbar { display: grid; grid-template-columns: minmax(110px, 38%) 1fr auto; gap: 10px; align-items: center; padding: 5px 0; font-size: 13.5px; }
+.hbar .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar .trk { background: var(--bg); border-radius: 6px; height: 10px; overflow: hidden; }
+.hbar .trk i { display: block; height: 100%; background: var(--terra); border-radius: 6px; }
+.hbar b { min-width: 32px; text-align: right; }
+.funnel .hbar { grid-template-columns: minmax(150px, 45%) 1fr auto; }
+.funnel small { color: var(--muted); font-weight: 600; margin-left: 4px; }
+.vphotos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.vphotos figure { margin: 0; position: relative; border-radius: 10px; overflow: hidden; aspect-ratio: 4/3; background: var(--bg); }
+.vphotos img { width: 100%; height: 100%; object-fit: cover; }
+.vphotos figcaption { position: absolute; left: 6px; bottom: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; font-weight: 800; border-radius: 6px; padding: 1px 7px; }
+.daybars { display: flex; align-items: flex-end; gap: 3px; height: 160px; padding-top: 18px; }
+.daybars div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; position: relative; min-width: 0; }
+.daybars i { display: block; width: 100%; max-width: 34px; background: var(--terra); border-radius: 4px 4px 1px 1px; min-height: 2px; }
+.daybars em { position: absolute; top: -16px; font-style: normal; font-size: 10px; font-weight: 800; color: var(--ink2); }
+.daylabels { display: flex; gap: 3px; margin-top: 4px; }
+.daylabels span { flex: 1; text-align: center; font-size: 10px; color: var(--muted); min-width: 0; overflow: hidden; }
