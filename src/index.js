@@ -684,14 +684,18 @@ async function adminApi(req, env, url, path) {
     const value = b.kind === 'fixed' ? cents(b.value) : parseInt(b.value, 10);
     if (!value || value <= 0 || (b.kind !== 'fixed' && value > 100)) return bad('Valor del descuento no válido');
     try {
-      await db.prepare('INSERT INTO promo_codes (code, kind, value, unit_id, valid_from, valid_to, min_nights, max_uses, note) VALUES (?,?,?,?,?,?,?,?,?)')
-        .bind(code, b.kind === 'fixed' ? 'fixed' : 'pct', value, intOrNull(b.unit_id), b.valid_from || null, b.valid_to || null, intOrNull(b.min_nights) || 0, intOrNull(b.max_uses), b.note || '').run();
+      await db.prepare('INSERT INTO promo_codes (code, kind, value, unit_id, valid_from, valid_to, min_nights, max_uses, note, exclusive) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .bind(code, b.kind === 'fixed' ? 'fixed' : 'pct', value, intOrNull(b.unit_id), b.valid_from || null, b.valid_to || null, intOrNull(b.min_nights) || 0, intOrNull(b.max_uses), b.note || '', b.exclusive ? 1 : 0).run();
     } catch { return bad('Ese código ya existe'); }
     return json({ ok: true });
   }
   if ((m = path.match(/^\/api\/admin\/promos\/(\d+)$/))) {
     if (req.method === 'DELETE') { await db.prepare('DELETE FROM promo_codes WHERE id = ?').bind(Number(m[1])).run(); return json({ ok: true }); }
-    if (req.method === 'PATCH') { await db.prepare('UPDATE promo_codes SET active = ? WHERE id = ?').bind(b.active ? 1 : 0, Number(m[1])).run(); return json({ ok: true }); }
+    if (req.method === 'PATCH') {
+      if ('active' in b) await db.prepare('UPDATE promo_codes SET active = ? WHERE id = ?').bind(b.active ? 1 : 0, Number(m[1])).run();
+      if ('exclusive' in b) await db.prepare('UPDATE promo_codes SET exclusive = ? WHERE id = ?').bind(b.exclusive ? 1 : 0, Number(m[1])).run();
+      return json({ ok: true });
+    }
   }
 
   // Calendarios iCal externos

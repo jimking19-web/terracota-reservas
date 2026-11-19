@@ -484,12 +484,14 @@ $('#simGo').onclick = async () => {
 
 // ---------- CÓDIGOS ----------
 function renderPromos() {
-  $('#promoTable').innerHTML = '<thead><tr><th>Código</th><th>Descuento</th><th>Fechas de entrada</th><th class="num">Mín. noches</th><th class="num">Usos</th><th>Nota</th><th>Activo</th><th></th></tr></thead><tbody>'
+  $('#promoTable').innerHTML = '<thead><tr><th>Código</th><th>Descuento</th><th>Fechas de entrada</th><th class="num">Mín. noches</th><th class="num">Usos</th><th>Nota</th><th>Acumulable</th><th>Activo</th><th></th></tr></thead><tbody>'
     + (S.promos.length ? S.promos.map(p => `<tr><td><b>${esc(p.code)}</b></td><td>${p.kind === 'pct' ? p.value + ' %' : eur(p.value)}</td><td>${p.valid_from || p.valid_to ? `${p.valid_from ? fd(p.valid_from) : '…'} – ${p.valid_to ? fd(p.valid_to) : '…'}` : 'Siempre'}</td>
       <td class="num">${p.min_nights || '—'}</td><td class="num">${p.uses}${p.max_uses ? ' / ' + p.max_uses : ''}</td><td class="muted">${esc(p.note)}</td>
+      <td><label class="chk" title="Si lo desmarcas, al usar el código se quitan los demás descuentos"><input type="checkbox" data-stack="${p.id}" ${p.exclusive ? '' : 'checked'}></label></td>
       <td><label class="chk"><input type="checkbox" data-toggle="${p.id}" ${p.active ? 'checked' : ''}></label></td><td class="num"><button class="linkbtn" data-pdel="${p.id}">Borrar</button></td></tr>`).join('')
-      : '<tr><td colspan="8" class="empty">Aún no hay códigos</td></tr>') + '</tbody>';
+      : '<tr><td colspan="9" class="empty">Aún no hay códigos</td></tr>') + '</tbody>';
   $$('[data-toggle]').forEach(c => c.onchange = async () => { await act(api('/api/admin/promos/' + c.dataset.toggle, 'PATCH', { active: c.checked }), c.checked ? 'Código activado' : 'Código desactivado'); await refresh(); });
+  $$('[data-stack]').forEach(c => c.onchange = async () => { await act(api('/api/admin/promos/' + c.dataset.stack, 'PATCH', { exclusive: !c.checked }), c.checked ? 'Se suma a los demás descuentos' : 'Ahora sustituye a los demás descuentos'); await refresh(); });
   $$('[data-pdel]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar el código?') && await act(api('/api/admin/promos/' + b.dataset.pdel, 'DELETE'), 'Código borrado')) { await refresh(); renderPromos(); } });
 }
 $('#promoForm').onsubmit = async e => {

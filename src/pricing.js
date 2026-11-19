@@ -133,6 +133,11 @@ export async function quote(db, unit, { checkin, checkout, guests, promo, extras
     else if (p.min_nights && nights < p.min_nights) promoError = `El código requiere mínimo ${p.min_nights} noches`;
     else if (p.max_uses != null && p.uses >= p.max_uses) promoError = 'Código agotado';
     else {
+      // Código no acumulable: quita los demás descuentos (duración, última hora, anticipada)
+      if (p.exclusive) {
+        for (let i = lines.length - 1; i >= 0; i--) if (lines[i].type === 'discount') lines.splice(i, 1);
+        discounts = 0;
+      }
       const base = lodging + discounts;
       let amt = p.kind === 'fixed' ? p.value : Math.round(base * p.value / 100);
       amt = Math.min(amt, base);

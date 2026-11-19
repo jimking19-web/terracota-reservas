@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS promo_codes (
   max_uses INTEGER,                   -- NULL = ilimitado
   uses INTEGER NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
-  note TEXT
+  note TEXT,
+  exclusive INTEGER NOT NULL DEFAULT 0   -- 1 = no se acumula con otros descuentos
 );
 
 CREATE TABLE IF NOT EXISTS bookings (
