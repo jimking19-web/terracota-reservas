@@ -3,6 +3,7 @@ import { addDays, diffDays, isDate, todayMadrid } from './dates.js';
 import { calendar, getUnit, loadContext, night, quote, money } from './pricing.js';
 import { exportIcal, syncAll, syncFeed } from './ical.js';
 import { track, stats, cleanup as cleanupAnalytics } from './analytics.js';
+import { addSubscriber, unsubscribePage, runMarketing, sendCampaign, marketingStats, CONSENT_TEXT } from './marketing.js';
 import { createCheckout, verifyWebhook, stripeRequest } from './stripe.js';
 import { runDeposits, placeHold, releaseHold, captureHold, depositCheckout, depositLink, releaseDate } from './deposit.js';
 import { guestEmail, ownerEmail, sendMail, mailEnabled } from './mail.js';
@@ -187,6 +188,14 @@ async function publicApi(req, env, url, path) {
     return json(await quote(db, unit, b));
   }
 
+  if (path === '/api/subscribe' && req.method === 'POST') {
+    const b = await body(req);
+    if (b.website) return json({ ok: true });                       // honeypot
+    if (!b.consent) return bad('Marca la casilla para aceptar recibir emails');
+    const t = await addSubscriber(db, { email: b.email, name: b.name, source: 'web', consent: `${CONSENT_TEXT} (${sqlNow()} UTC)` });
+    return t ? json({ ok: true }) : bad('Revisa el email');
+  }
+
   if (path === '/api/book' && req.method === 'POST') {
     const b = await body(req);
     if (b.website) return bad('Error');                              // honeypot anti-bots
@@ -215,6 +224,7 @@ async function publicApi(req, env, url, path) {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', 'web', ?)`).bind(booking.ref, booking.unit_id, booking.checkin, booking.checkout, booking.nights, booking.guests,
       booking.name, booking.email, booking.phone, booking.country, booking.notes, booking.total, booking.breakdown, booking.promo_code, booking.billing, booking.deposit, sqlNow(expiresMs - Date.now())).run();
     booking.id = ins.meta.last_row_id;
+    if (b.marketing) await addSubscriber(db, { email: booking.email, name: booking.name, source: 'reserva', consent: `${CONSENT_TEXT} (${sqlNow()} UTC)` }).catch(() => {});
 
     // Doble comprobación contra carreras: si otra reserva entró a la vez, anulamos esta
     const ctx = await loadContext(db, unit, booking.checkin, booking.checkout, { excludeBookingId: booking.id });
@@ -471,6 +481,22 @@ async function adminApi(req, env, url, path) {
   }
 
   if (path === '/api/admin/analytics' && req.method === 'GET') return json(await stats(db, parseInt(url.searchParams.get('days') || '30', 10)));
+
+  if (path === '/api/admin/marketing' && req.method === 'GET') return json(await marketingStats(db));
+  if (path === '/api/admin/campaign' && req.method === 'POST') {
+    const site = await getSettings(db);
+    return json(await sendCampaign(env, site, { ...b, to: String(b.to || site.email || env.SMTP_USER || '').trim() }));
+  }
+  if (path === '/api/admin/subscribers.csv' && req.method === 'GET') {
+    const rows = (await db.prepare('SELECT email, name, source, created_at, unsubscribed_at FROM subscribers ORDER BY id').all()).results;
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = '\ufeffemail;nombre;origen;alta;baja\n' + rows.map(r => [r.email, r.name, r.source, r.created_at, r.unsubscribed_at].map(q).join(';')).join('\n');
+    return new Response(csv, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="interesados-terracota.csv"' } });
+  }
+  if ((m = path.match(/^\/api\/admin\/subscribers\/(\d+)$/)) && req.method === 'DELETE') {
+    await db.prepare('DELETE FROM subscribers WHERE id = ?').bind(Number(m[1])).run();
+    return json({ ok: true });
+  }
 
   if (path === '/api/admin/state' && req.method === 'GET') {
     if (!/localhost|127\.0\.0\.1/.test(url.host)) await setSetting(db, 'site_url', url.origin);
@@ -791,6 +817,7 @@ export default {
       if ((m = path.match(/^\/factura\/(TS-[A-Z0-9]{6})$/))) {
         return serveInvoice(env, m[1], url.searchParams.get('t'), url.origin, await getSettings(env.DB));
       }
+      if (path === '/baja') return unsubscribePage(env.DB, url.searchParams.get('t'), await getSettings(env.DB));
       if ((m = path.match(/^\/ical\/([a-f0-9]{16,64})\.ics$/))) {
         const unit = await env.DB.prepare('SELECT * FROM units WHERE ical_token = ?').bind(m[1]).first();
         if (!unit) return new Response('No encontrado', { status: 404 });
@@ -808,6 +835,7 @@ export default {
       await Promise.all([syncAll(env.DB), expirePending(env.DB), cleanupAnalytics(env.DB).catch(() => {})]);
       const cfg = await withConfig(env);
       try { await runDeposits(cfg, await getSettings(env.DB)); } catch (e) { console.error('fianzas', e); }
+      try { await runMarketing(cfg, await getSettings(env.DB)); } catch (e) { console.error('seguimiento', e); }
     })());
   },
 };

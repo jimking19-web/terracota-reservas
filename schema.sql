@@ -109,6 +109,9 @@ CREATE TABLE IF NOT EXISTS bookings (
   invoice_no TEXT,                        -- nº de factura (se asigna al confirmar)
   invoice_date TEXT,
   mail_sent_at TEXT,                      -- último email de confirmación enviado al huésped
+  recovery_sent_at TEXT,                  -- aviso de «reserva a medias» enviado (o motivo de omitirlo)
+  poststay_sent_at TEXT,                  -- email de agradecimiento tras la estancia
+  return_code TEXT,                       -- código para volver enviado tras la estancia
   deposit INTEGER NOT NULL DEFAULT 0,     -- fianza de esta reserva (céntimos)
   deposit_status TEXT,                    -- pending | held | captured | released
   deposit_pi TEXT,                        -- PaymentIntent de la retención
@@ -189,3 +192,24 @@ CREATE TABLE IF NOT EXISTS analytics (
   type TEXT NOT NULL, detail TEXT, ref TEXT, country TEXT, device TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_analytics_day ON analytics(day, type);
+
+-- Seguimiento de clientes: lista de interesados (con consentimiento) y huéspedes, envíos y avisos automáticos
+CREATE TABLE IF NOT EXISTS subscribers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT UNIQUE NOT NULL,
+  name TEXT,
+  source TEXT NOT NULL,          -- web | reserva | huésped
+  consent TEXT,                  -- texto aceptado y fecha (NULL para huéspedes: art. 21.2 LSSI)
+  token TEXT NOT NULL,           -- para el enlace de baja
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  unsubscribed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS campaigns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subject TEXT, message TEXT, sent INTEGER, failed INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Migración en la base ya en marcha (solo una vez):
+-- ALTER TABLE bookings ADD COLUMN recovery_sent_at TEXT;
+-- ALTER TABLE bookings ADD COLUMN poststay_sent_at TEXT;
+-- ALTER TABLE bookings ADD COLUMN return_code TEXT;

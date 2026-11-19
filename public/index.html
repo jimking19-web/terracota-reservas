@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=20261119a">
+<link rel="stylesheet" href="/styles.css?v=20261119b">
 </head>
 <body>
 
@@ -147,6 +147,19 @@
   </div>
 </section>
 
+<section class="newsletter" id="ofertas">
+  <div class="wrap news-in">
+    <div><p class="eyebrow">Ofertas y fechas libres</p><h2 class="display small">¿Te avisamos?</h2>
+      <p class="muted">Un email de vez en cuando con fechas libres y ofertas para reservar directo. Nada más.</p></div>
+    <form id="newsForm" novalidate>
+      <div class="news-row"><input type="email" name="email" placeholder="Tu email" autocomplete="email" required><button class="btn btn-terra" type="submit">Avisadme</button></div>
+      <input name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <label class="news-check"><input type="checkbox" name="consent" required> <span>Acepto recibir emails de Terracota Suites con ofertas y fechas libres. Puedo darme de baja cuando quiera.</span></label>
+      <p class="news-msg" id="newsMsg"></p>
+    </form>
+  </div>
+</section>
+
 <section class="section policies">
   <div class="wrap three-col">
     <div><h3>Normas de la casa</h3><ul id="rules"></ul></div>
@@ -191,6 +204,7 @@
         </div>
       </details>
       <input name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <label class="check full"><input type="checkbox" name="marketing"> <span>Quiero recibir ofertas y fechas libres por email (opcional, puedes darte de baja cuando quieras).</span></label>
       <label class="check full"><input type="checkbox" name="accept" required> <span>Acepto la política de cancelación y las normas de la casa.</span></label>
     </div>
     <p class="sum-error" id="formError"></p>
@@ -207,6 +221,6 @@
   <button class="lb-nav next" id="lbNext" aria-label="Siguiente">›</button>
 </dialog>
 
-<script src="/app.js?v=20261119a" type="module"></script>
+<script src="/app.js?v=20261119b" type="module"></script>
 </body>
 </html>

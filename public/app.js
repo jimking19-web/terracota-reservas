@@ -315,6 +315,7 @@ async function submitBooking(e) {
   const f = new FormData($('#guestForm'));
   const data = Object.fromEntries(f.entries());
   data.accept = !!f.get('accept');
+  data.marketing = !!f.get('marketing');
   const err = $('#formError');
   if (!data.name || data.name.trim().length < 3) return (err.textContent = 'Indica tu nombre y apellidos');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email || '')) return (err.textContent = 'Revisa el email');
@@ -381,6 +382,17 @@ function bind() {
   $('#faqList').addEventListener('toggle', e => { if (e.target.open) track('faq', e.target.querySelector('summary')?.textContent || '', true); }, true);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') track('salida', Math.round((Date.now() - T0) / 1000)); });
 
+  $('#newsForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = new FormData(e.target), msg = $('#newsMsg');
+    msg.className = 'news-msg';
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.get('email') || '')) { msg.textContent = 'Revisa el email'; msg.classList.add('err'); return; }
+    if (!f.get('consent')) { msg.textContent = 'Marca la casilla para poder escribirte'; msg.classList.add('err'); return; }
+    const r = await api('/api/subscribe', { method: 'POST', body: { email: f.get('email'), consent: true, website: f.get('website') } });
+    if (r.ok) { e.target.reset(); msg.textContent = '¡Listo! Te avisaremos de fechas libres y ofertas.'; msg.classList.add('ok'); track('contacto', 'lista de ofertas'); }
+    else { msg.textContent = r.error || 'No se pudo guardar'; msg.classList.add('err'); }
+  });
+
   const nav = $('#nav');
   const onScroll = () => nav.classList.toggle('solid', scrollY > 60);
   addEventListener('scroll', onScroll, { passive: true }); onScroll();
@@ -425,5 +437,17 @@ async function init() {
     telephone: s.phone || undefined, email: s.email || undefined, url: location.origin, image: site.photos.slice(0, 5).map(p => `${location.origin}/foto/${p.id}`), checkinTime: s.checkin_time, checkoutTime: s.checkout_time };
   const sc = document.createElement('script'); sc.type = 'application/ld+json'; sc.textContent = JSON.stringify(ld); document.head.appendChild(sc);
   await loadCalendar();
+  // Enlace con fechas (p. ej. desde el email de «reserva a medias»): ?entrada=AAAA-MM-DD&salida=AAAA-MM-DD&huespedes=2
+  const qp = new URLSearchParams(location.search);
+  const ci = qp.get('entrada'), co = qp.get('salida');
+  if (ci && co && state.cal.get(ci)?.ci) {
+    state.guests = Math.max(1, Math.min(state.unit.max_guests, parseInt(qp.get('huespedes') || state.guests, 10) || state.guests));
+    state.checkin = ci; state.picking = 'checkout';
+    const m0 = new Date(state.calFrom + 'T00:00:00Z'), m1 = new Date(ci + 'T00:00:00Z');
+    state.monthOffset = Math.max(0, (m1.getUTCFullYear() - m0.getUTCFullYear()) * 12 + m1.getUTCMonth() - m0.getUTCMonth());
+    if (canCheckout(co)) { state.checkout = co; state.picking = 'checkin'; getQuote(); }
+    renderCalendar(); renderSummary();
+    setTimeout(() => $('#reservar').scrollIntoView({ behavior: 'smooth' }), 300);
+  }
 }
 init();

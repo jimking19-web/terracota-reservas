@@ -37,6 +37,7 @@
     <nav id="tabs">
       <button data-tab="inicio" class="on"><i>◎</i>Inicio</button>
       <button data-tab="visitas"><i>↗</i>Visitas a la web</button>
+      <button data-tab="clientes"><i>✉</i>Clientes y emails</button>
       <button data-tab="calendario"><i>▦</i>Calendario y precios</button>
       <button data-tab="reservas"><i>☰</i>Reservas <span class="pill" id="pendingPill" hidden></span></button>
       <button data-tab="tarifas"><i>€</i>Tarifas y temporadas</button>
@@ -91,6 +92,38 @@
       <div class="grid2">
         <div class="card"><div class="card-h"><h2>Países y dispositivos</h2></div><div id="vGeo"></div></div>
         <div class="card"><div class="card-h"><h2>Contactos desde la web</h2></div><div id="vContact"></div></div>
+      </div>
+    </section>
+
+    <!-- CLIENTES Y EMAILS -->
+    <section data-view="clientes" class="view" hidden>
+      <div id="mkWarn"></div>
+      <div class="kpis" id="mkKpis"></div>
+      <form class="card" id="mkAuto">
+        <div class="card-h"><h2>Emails automáticos</h2><button class="btn primary">Guardar</button></div>
+        <div class="fgrid">
+          <label class="chk span2"><input type="checkbox" name="mk_recovery"> Avisar a quien deja una reserva a medias (unas horas después, solo si sus fechas siguen libres)</label>
+          <label class="chk span2"><input type="checkbox" name="mk_poststay"> Email de agradecimiento al día siguiente de la salida, con código para volver</label>
+          <label>Descuento del código para volver (%)<input name="mk_return_pct" type="number" min="0" max="50"></label>
+          <label class="span2">Enlace para dejar reseña (Google, Airbnb…)<input name="review_url" placeholder="https://g.page/r/…/review"></label>
+        </div>
+        <p class="hint">Los códigos para volver son personales, de un solo uso, válidos un año y no se acumulan con otros descuentos. Aparecen en «Descuentos y códigos».</p>
+      </form>
+      <form class="card" id="mkCampaign">
+        <div class="card-h"><h2>Enviar un email a tu lista</h2><span class="muted small" id="mkCount"></span></div>
+        <div class="fgrid">
+          <label class="span2">Asunto<input name="subject" required placeholder="Fechas libres en diciembre"></label>
+          <label class="span2">Título dentro del email<input name="title" placeholder="Opcional: si no, se usa el asunto"></label>
+          <label class="span4">Mensaje (deja una línea en blanco entre párrafos)<textarea name="message" rows="6" required placeholder="Hola:&#10;&#10;Nos quedan libres el puente de diciembre…"></textarea></label>
+          <label class="span2">Texto del botón<input name="label" placeholder="Ver fechas y reservar"></label>
+          <label class="span2">Enlace del botón<input name="link" placeholder="Opcional: por defecto, el calendario de la web"></label>
+        </div>
+        <div class="row-btns"><button type="button" class="btn" id="mkTest">Enviarme una prueba</button><button type="button" class="btn primary" id="mkSend">Enviar a la lista</button></div>
+        <div id="mkCamps"></div>
+      </form>
+      <div class="card flush">
+        <div class="card-h" style="padding:16px 20px 0"><h2>Tu lista</h2><a class="btn" href="/api/admin/subscribers.csv">Descargar Excel (CSV)</a></div>
+        <div class="table-wrap"><table class="tbl" id="mkList"></table></div>
       </div>
     </section>
 

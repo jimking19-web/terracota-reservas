@@ -80,7 +80,7 @@ function go(tab) {
   $('#title').textContent = $(`#tabs [data-tab="${tab}"]`).textContent.replace(/\d+$/, '').trim().replace(/^[^\wÁÉÍÓÚáéíóú]+/, '');
   $('.side').classList.remove('open');
   history.replaceState(null, '', '#' + tab);
-  ({ visitas: renderVisits, inicio: renderHome, calendario: renderCal, reservas: loadBookings, tarifas: renderTarifas, codigos: renderPromos, sincro: renderSync, web: renderWeb, pagos: renderPagos })[tab]?.();
+  ({ clientes: renderClientes, visitas: renderVisits, inicio: renderHome, calendario: renderCal, reservas: loadBookings, tarifas: renderTarifas, codigos: renderPromos, sincro: renderSync, web: renderWeb, pagos: renderPagos })[tab]?.();
 }
 $('#tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); };
 document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) go(g.dataset.goto); });
@@ -759,6 +759,54 @@ async function renderVisits() {
   $('#vGeo').innerHTML = hbars(d.countries) + (d.devices.length ? `<h3>Dispositivo</h3>${hbars(d.devices.map(x => ({ name: x.device[0].toUpperCase() + x.device.slice(1), n: x.n })))}` : '');
   $('#vContact').innerHTML = hbars(d.contact.map(x => ({ name: x.type === 'whatsapp' ? `WhatsApp (${x.detail})` : x.detail[0].toUpperCase() + x.detail.slice(1), n: x.n })), 'Nadie ha contactado desde la web todavía');
 }
+
+// ---------- CLIENTES Y EMAILS ----------
+const SRC_NAMES = { web: 'Se apuntó en la web', reserva: 'Al reservar', 'huésped': 'Huésped' };
+async function renderClientes() {
+  const d = await api('/api/admin/marketing');
+  if (!d.ok) return;
+  $('#mkWarn').innerHTML = S.mail === false ? '<div class="warn">Los emails no están activados: configúralos en «Pagos y cuenta» para que esto funcione.</div>' : '';
+  const sub = d.subscribers;
+  $('#mkKpis').innerHTML = [
+    ['En tu lista', sub.active || 0],
+    ['Reservas a medias avisadas', d.recoverySent],
+    ['Recuperadas', `${d.recovered.n}${d.recovered.n ? ' · ' + eur(d.recovered.total) : ''}`],
+    ['Códigos para volver usados', `${d.returnCodes.used} de ${d.returnCodes.n}`],
+  ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join('');
+  const f = $('#mkAuto');
+  f.mk_recovery.checked = S.settings.mk_recovery !== '0';
+  f.mk_poststay.checked = S.settings.mk_poststay !== '0';
+  f.mk_return_pct.value = S.settings.mk_return_pct ?? '10';
+  f.review_url.value = S.settings.review_url || '';
+  $('#mkCount').textContent = `Se enviará a ${sub.active || 0} ${sub.active === 1 ? 'persona' : 'personas'}`;
+  $('#mkCamps').innerHTML = d.campaigns.length ? `<h3>Enviados</h3><div class="table-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Asunto</th><th class="num">Enviados</th></tr></thead><tbody>${d.campaigns.map(c => `<tr><td>${esc(c.created_at.slice(0, 16))}</td><td>${esc(c.subject)}</td><td class="num">${c.sent}${c.failed ? ` <span class="muted">(${c.failed} fallidos)</span>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '';
+  $('#mkList').innerHTML = '<thead><tr><th>Email</th><th>Nombre</th><th>Origen</th><th>Alta</th><th>Estado</th><th></th></tr></thead><tbody>' +
+    (d.list.length ? d.list.map(x => `<tr><td>${esc(x.email)}</td><td>${esc(x.name || '')}</td><td>${esc(SRC_NAMES[x.source] || x.source)}</td><td>${esc((x.created_at || '').slice(0, 10))}</td>
+      <td>${x.unsubscribed_at ? '<span class="tag t-cancelled">De baja</span>' : '<span class="tag t-confirmed">Activo</span>'}</td><td class="num"><button class="linkbtn" data-sdel="${x.id}">Borrar</button></td></tr>`).join('')
+      : '<tr><td colspan="6" class="empty">Aún no hay nadie. Se irá llenando con quien se apunte en la web, al reservar y con tus huéspedes.</td></tr>') + '</tbody>';
+  $$('[data-sdel]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar este contacto de la lista?') && await act(api('/api/admin/subscribers/' + b.dataset.sdel, 'DELETE'), 'Borrado')) renderClientes(); });
+}
+$('#mkAuto').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  const d = { mk_recovery: f.mk_recovery.checked ? '1' : '0', mk_poststay: f.mk_poststay.checked ? '1' : '0', mk_return_pct: String(Math.max(0, Math.min(50, parseInt(f.mk_return_pct.value || '0', 10)))), review_url: f.review_url.value.trim() };
+  if (await act(api('/api/admin/settings', 'PUT', d), 'Guardado')) { await refresh(); renderClientes(); }
+};
+async function campaign(test) {
+  const f = $('#mkCampaign');
+  if (!f.reportValidity()) return;
+  const d = Object.fromEntries(new FormData(f).entries());
+  if (!test && !confirm(`¿Enviar «${d.subject}» a toda tu lista? No se puede deshacer.`)) return;
+  const btn = test ? $('#mkTest') : $('#mkSend'); const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  const r = await api('/api/admin/campaign', 'POST', { ...d, test });
+  btn.disabled = false; btn.textContent = label;
+  if (!r.ok) return toast(r.error || 'No se pudo enviar', true);
+  toast(test ? 'Prueba enviada a tu email' : `Enviado a ${r.sent} ${r.sent === 1 ? 'persona' : 'personas'}${r.failed ? ` (${r.failed} fallidos)` : ''}`);
+  if (!test) { f.reset(); renderClientes(); }
+}
+$('#mkTest').onclick = () => campaign(true);
+$('#mkSend').onclick = () => campaign(false);
 
 // ---------- PAGOS ----------
 function renderPagos() {
