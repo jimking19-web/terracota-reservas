@@ -488,16 +488,35 @@ function renderPromos() {
     + (S.promos.length ? S.promos.map(p => `<tr><td><b>${esc(p.code)}</b></td><td>${p.kind === 'pct' ? p.value + ' %' : eur(p.value)}</td><td>${p.valid_from || p.valid_to ? `${p.valid_from ? fd(p.valid_from) : '…'} – ${p.valid_to ? fd(p.valid_to) : '…'}` : 'Siempre'}</td>
       <td class="num">${p.min_nights || '—'}</td><td class="num">${p.uses}${p.max_uses ? ' / ' + p.max_uses : ''}</td><td class="muted">${esc(p.note)}${p.no_weekend ? '<br>Solo domingo a viernes' : ''}${p.blackout ? `<br>Excepto: ${esc(p.blackout_label || p.blackout)}` : ''}</td>
       <td><label class="chk" title="Si lo desmarcas, al usar el código se quitan los demás descuentos"><input type="checkbox" data-stack="${p.id}" ${p.exclusive ? '' : 'checked'}></label></td>
-      <td><label class="chk"><input type="checkbox" data-toggle="${p.id}" ${p.active ? 'checked' : ''}></label></td><td class="num"><button class="linkbtn" data-pdel="${p.id}">Borrar</button></td></tr>`).join('')
+      <td><label class="chk"><input type="checkbox" data-toggle="${p.id}" ${p.active ? 'checked' : ''}></label></td><td class="num"><button class="linkbtn" data-pedit="${p.id}">Editar</button> · <button class="linkbtn" data-pdel="${p.id}">Borrar</button></td></tr>`).join('')
       : '<tr><td colspan="9" class="empty">Aún no hay códigos</td></tr>') + '</tbody>';
   $$('[data-toggle]').forEach(c => c.onchange = async () => { await act(api('/api/admin/promos/' + c.dataset.toggle, 'PATCH', { active: c.checked }), c.checked ? 'Código activado' : 'Código desactivado'); await refresh(); });
   $$('[data-stack]').forEach(c => c.onchange = async () => { await act(api('/api/admin/promos/' + c.dataset.stack, 'PATCH', { exclusive: !c.checked }), c.checked ? 'Se suma a los demás descuentos' : 'Ahora sustituye a los demás descuentos'); await refresh(); });
-  $$('[data-pdel]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar el código?') && await act(api('/api/admin/promos/' + b.dataset.pdel, 'DELETE'), 'Código borrado')) { await refresh(); renderPromos(); } });
+  $$('[data-pdel]').forEach(b => b.onclick = async () => { if (confirm('¿Borrar el código?') && await act(api('/api/admin/promos/' + b.dataset.pdel, 'DELETE'), 'Código borrado')) { if (promoEditing === Number(b.dataset.pdel)) promoEdit(null); await refresh(); renderPromos(); } });
+  $$('[data-pedit]').forEach(b => b.onclick = () => promoEdit(Number(b.dataset.pedit)));
 }
+let promoEditing = null;
+function promoEdit(id) {
+  const f = $('#promoForm'); const p = S.promos.find(x => x.id === id);
+  promoEditing = p ? id : null;
+  f.reset();
+  if (p) {
+    f.code.value = p.code; f.kind.value = p.kind; f.value.value = p.kind === 'fixed' ? toEuros(p.value) : p.value;
+    f.min_nights.value = p.min_nights || 0; f.valid_from.value = p.valid_from || ''; f.valid_to.value = p.valid_to || '';
+    f.max_uses.value = p.max_uses || ''; f.note.value = p.note || ''; f.blackout.value = p.blackout || '';
+    f.exclusive.checked = !!p.exclusive; f.no_weekend.checked = !!p.no_weekend;
+    f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  $('#promoTitle').textContent = p ? `Editar código ${p.code}` : 'Nuevo código promocional';
+  $('#promoSave').textContent = p ? 'Guardar cambios' : 'Crear código';
+  $('#promoCancel').hidden = !p;
+}
+$('#promoCancel').onclick = () => promoEdit(null);
 $('#promoForm').onsubmit = async e => {
   e.preventDefault();
   const d = Object.fromEntries(new FormData(e.target).entries());
-  if (await act(api('/api/admin/promos', 'POST', d), 'Código creado')) { e.target.reset(); await refresh(); renderPromos(); }
+  const id = promoEditing;
+  if (await act(api(id ? '/api/admin/promos/' + id : '/api/admin/promos', id ? 'PUT' : 'POST', d), id ? 'Código guardado' : 'Código creado')) { promoEdit(null); await refresh(); renderPromos(); }
 };
 
 // ---------- EXTRAS ----------

@@ -678,14 +678,16 @@ async function adminApi(req, env, url, path) {
   }
 
   // Códigos promocionales
-  if (path === '/api/admin/promos' && req.method === 'POST') {
+  const promoId = (path.match(/^\/api\/admin\/promos\/(\d+)$/) || [])[1];
+  if ((path === '/api/admin/promos' && req.method === 'POST') || (promoId && req.method === 'PUT')) {
     const code = String(b.code || '').trim().toUpperCase().replace(/\s+/g, '');
     if (!/^[A-Z0-9_-]{3,30}$/.test(code)) return bad('Código no válido (3-30 letras/números)');
     const value = b.kind === 'fixed' ? cents(b.value) : parseInt(b.value, 10);
     if (!value || value <= 0 || (b.kind !== 'fixed' && value > 100)) return bad('Valor del descuento no válido');
+    const vals = [code, b.kind === 'fixed' ? 'fixed' : 'pct', value, intOrNull(b.unit_id), b.valid_from || null, b.valid_to || null, intOrNull(b.min_nights) || 0, intOrNull(b.max_uses), b.note || '', b.exclusive ? 1 : 0, b.no_weekend ? 1 : 0, String(b.blackout || '').trim() || null];
     try {
-      await db.prepare('INSERT INTO promo_codes (code, kind, value, unit_id, valid_from, valid_to, min_nights, max_uses, note, exclusive, no_weekend, blackout) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-        .bind(code, b.kind === 'fixed' ? 'fixed' : 'pct', value, intOrNull(b.unit_id), b.valid_from || null, b.valid_to || null, intOrNull(b.min_nights) || 0, intOrNull(b.max_uses), b.note || '', b.exclusive ? 1 : 0, b.no_weekend ? 1 : 0, String(b.blackout || '').trim() || null).run();
+      if (promoId) await db.prepare('UPDATE promo_codes SET code=?, kind=?, value=?, unit_id=?, valid_from=?, valid_to=?, min_nights=?, max_uses=?, note=?, exclusive=?, no_weekend=?, blackout=? WHERE id = ?').bind(...vals, Number(promoId)).run();
+      else await db.prepare('INSERT INTO promo_codes (code, kind, value, unit_id, valid_from, valid_to, min_nights, max_uses, note, exclusive, no_weekend, blackout) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').bind(...vals).run();
     } catch { return bad('Ese código ya existe'); }
     return json({ ok: true });
   }

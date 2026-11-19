@@ -203,7 +203,7 @@
     <!-- CÓDIGOS -->
     <section data-view="codigos" class="view" hidden>
       <form class="card" id="promoForm">
-        <div class="card-h"><h2>Nuevo código promocional</h2><button class="btn primary">Crear código</button></div>
+        <div class="card-h"><h2 id="promoTitle">Nuevo código promocional</h2><span><button type="button" class="btn" id="promoCancel" hidden>Cancelar</button> <button class="btn primary" id="promoSave">Crear código</button></span></div>
         <div class="fgrid">
           <label>Código<input name="code" required placeholder="VERANO10" style="text-transform:uppercase"></label>
           <label>Tipo<select name="kind"><option value="pct">Porcentaje (%)</option><option value="fixed">Importe fijo (€)</option></select></label>
