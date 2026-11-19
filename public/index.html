@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=20261119b">
+<link rel="stylesheet" href="/styles.css?v=20261119c">
 </head>
 <body>
 
@@ -78,6 +78,15 @@
     <p class="eyebrow center">Detalles</p>
     <h2 class="display center">Qué incluye tu estancia</h2>
     <ul class="amenities" id="amenities"></ul>
+  </div>
+</section>
+
+<section class="section reviews" id="opiniones" hidden>
+  <div class="wrap">
+    <div class="section-head"><div><p class="eyebrow">Opiniones</p><h2 class="display">Lo que dicen nuestros huéspedes</h2></div>
+      <a class="g-badge" id="gBadge" target="_blank" rel="noopener"><span class="g-stars">★★★★★</span><b id="gRating"></b><span id="gCount"></span></a></div>
+    <div class="review-grid" id="reviewGrid"></div>
+    <div class="reviews-cta"><a class="btn btn-ghost" id="gAll" target="_blank" rel="noopener">Ver todas en Google</a><a class="btn btn-terra" id="gWrite" target="_blank" rel="noopener">¿Ya nos visitaste? Déjanos tu reseña</a></div>
   </div>
 </section>
 
@@ -221,6 +230,6 @@
   <button class="lb-nav next" id="lbNext" aria-label="Siguiente">›</button>
 </dialog>
 
-<script src="/app.js?v=20261119b" type="module"></script>
+<script src="/app.js?v=20261119c" type="module"></script>
 </body>
 </html>

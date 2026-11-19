@@ -62,6 +62,7 @@ function fillSettings(s) {
   $('#rules').innerHTML = lines(s.house_rules).map(r => `<li>${esc(r)}</li>`).join('');
   $('#highlights').innerHTML = lines(s.highlights).map(h => { const [a, b] = h.split('|'); return `<div><b>${esc(a)}</b><span>${esc(b || '')}</span></div>`; }).join('');
   const badges = [];
+  if (s.reviews_rating) badges.push(`★ ${s.reviews_rating} en Google${s.reviews_count ? ` (${s.reviews_count} reseñas)` : ''}`);
   if (s.superhost === '1') badges.push('★ Superanfitriones en Airbnb');
   badges.push('Reserva directa sin comisiones');
   $('#heroBadges').innerHTML = badges.map(b => `<span class="badge">${esc(b)}</span>`).join('');
@@ -79,6 +80,19 @@ function fillSettings(s) {
   const faqs = lines(s.faq).map(l => l.split('|')).filter(([q, a]) => q && a);
   $('#faq').hidden = !faqs.length;
   $('#faqList').innerHTML = faqs.map(([q, ...a]) => `<details><summary>${esc(q)}</summary><p>${esc(a.join('|'))}</p></details>`).join('');
+  // Opiniones de Google
+  const revs = lines(s.reviews).map(l => l.split('|').map(x => x.trim())).filter(([n, t]) => n && t);
+  if (revs.length || s.reviews_rating) {
+    $('#opiniones').hidden = false;
+    const gUrl = s.google_maps_url || '#';
+    for (const id of ['#gBadge', '#gAll']) $(id).href = gUrl;
+    $('#gAll').hidden = !s.google_maps_url;
+    $('#gWrite').href = s.review_url || gUrl; $('#gWrite').hidden = !s.review_url;
+    $('#gRating').textContent = s.reviews_rating || '';
+    $('#gCount').textContent = s.reviews_count ? `${s.reviews_count} reseñas en Google` : 'en Google';
+    $('#reviewGrid').innerHTML = revs.map(([n, t, when]) => `<article class="review"><span class="g-stars">★★★★★</span><blockquote>«${esc(t)}»</blockquote>
+      <footer><span class="av">${esc(n.charAt(0).toUpperCase())}</span><span><b>${esc(n)}</b>Reseña de Google${when ? ' · ' + esc(when) : ''}</span></footer></article>`).join('');
+  }
   const legal = [s.license && `Nº registro turístico: ${s.license}`, s.legal_name, s.legal_id].filter(Boolean);
   $('#legal').textContent = legal.join(' · ');
   $('#year').textContent = new Date().getFullYear();
