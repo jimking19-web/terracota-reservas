@@ -684,8 +684,8 @@ async function adminApi(req, env, url, path) {
     const value = b.kind === 'fixed' ? cents(b.value) : parseInt(b.value, 10);
     if (!value || value <= 0 || (b.kind !== 'fixed' && value > 100)) return bad('Valor del descuento no válido');
     try {
-      await db.prepare('INSERT INTO promo_codes (code, kind, value, unit_id, valid_from, valid_to, min_nights, max_uses, note, exclusive) VALUES (?,?,?,?,?,?,?,?,?,?)')
-        .bind(code, b.kind === 'fixed' ? 'fixed' : 'pct', value, intOrNull(b.unit_id), b.valid_from || null, b.valid_to || null, intOrNull(b.min_nights) || 0, intOrNull(b.max_uses), b.note || '', b.exclusive ? 1 : 0).run();
+      await db.prepare('INSERT INTO promo_codes (code, kind, value, unit_id, valid_from, valid_to, min_nights, max_uses, note, exclusive, no_weekend, blackout) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+        .bind(code, b.kind === 'fixed' ? 'fixed' : 'pct', value, intOrNull(b.unit_id), b.valid_from || null, b.valid_to || null, intOrNull(b.min_nights) || 0, intOrNull(b.max_uses), b.note || '', b.exclusive ? 1 : 0, b.no_weekend ? 1 : 0, String(b.blackout || '').trim() || null).run();
     } catch { return bad('Ese código ya existe'); }
     return json({ ok: true });
   }

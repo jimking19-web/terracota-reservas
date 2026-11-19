@@ -77,7 +77,10 @@ CREATE TABLE IF NOT EXISTS promo_codes (
   uses INTEGER NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
   note TEXT,
-  exclusive INTEGER NOT NULL DEFAULT 0   -- 1 = no se acumula con otros descuentos
+  exclusive INTEGER NOT NULL DEFAULT 0,  -- 1 = no se acumula con otros descuentos
+  no_weekend INTEGER NOT NULL DEFAULT 0, -- 1 = no vale si la estancia incluye noche de viernes o sábado
+  blackout TEXT,                         -- noches excluidas: "2026-12-04..2026-12-07, 2026-12-24"
+  blackout_label TEXT                    -- cómo se explica al huésped (p. ej. "puente de diciembre, Nochebuena y Reyes")
 );
 
 CREATE TABLE IF NOT EXISTS bookings (

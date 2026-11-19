@@ -1,6 +1,14 @@
 // Motor de precios y disponibilidad. Todos los importes en céntimos (enteros).
 import { addDays, diffDays, eachNight, isDate, todayMadrid, weekday } from './dates.js';
 
+// Fechas excluidas de un código: "2026-12-04..2026-12-07, 2026-12-24" → [[desde, hasta], …] (noches, ambas incluidas)
+export function promoBlackout(p) {
+  return String(p.blackout || '').split(/[,;\n]+/).map(s => s.trim()).filter(Boolean).map(s => {
+    const [a, b] = s.split('..').map(x => x.trim());
+    return isDate(a) && (!b || isDate(b)) ? [a, b || a] : null;
+  }).filter(Boolean);
+}
+
 export async function getUnit(db, slugOrId) {
   const q = typeof slugOrId === 'number' || /^\d+$/.test(String(slugOrId))
     ? db.prepare('SELECT * FROM units WHERE id = ?').bind(Number(slugOrId))
@@ -132,6 +140,8 @@ export async function quote(db, unit, { checkin, checkout, guests, promo, extras
     else if (p.valid_to && checkin > p.valid_to) promoError = 'Código caducado para esas fechas';
     else if (p.min_nights && nights < p.min_nights) promoError = `El código requiere mínimo ${p.min_nights} noches`;
     else if (p.max_uses != null && p.uses >= p.max_uses) promoError = 'Código agotado';
+    else if (p.no_weekend && eachNight(checkin, checkout).some(d => [5, 6].includes(weekday(d)))) promoError = `El código ${p.code} solo vale para estancias de domingo a viernes (sin noches de viernes ni sábado)`;
+    else if (promoBlackout(p).some(([a, b]) => eachNight(checkin, checkout).some(d => d >= a && d <= b))) promoError = `El código ${p.code} no es válido en esas fechas${p.blackout_label ? ` (${p.blackout_label})` : ''}`;
     else {
       // Código no acumulable: quita los demás descuentos (duración, última hora, anticipada)
       if (p.exclusive) {

@@ -208,7 +208,9 @@
           <label>hasta<input name="valid_to" type="date"></label>
           <label>Usos máximos<input name="max_uses" type="number" min="1" placeholder="Ilimitado"></label>
           <label>Nota interna<input name="note" placeholder="Ej.: clientes de bodas"></label>
+          <label>Fechas excluidas (noches)<input name="blackout" placeholder="2026-12-24, 2026-12-04..2026-12-07"></label>
           <label class="chk"><input type="checkbox" name="exclusive" value="1"> No acumulable: quita los demás descuentos</label>
+          <label class="chk"><input type="checkbox" name="no_weekend" value="1"> Solo estancias de domingo a viernes</label>
         </div>
       </form>
       <div class="card flush"><div class="table-wrap"><table class="tbl" id="promoTable"></table></div></div>

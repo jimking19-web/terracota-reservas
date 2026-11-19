@@ -486,7 +486,7 @@ $('#simGo').onclick = async () => {
 function renderPromos() {
   $('#promoTable').innerHTML = '<thead><tr><th>Código</th><th>Descuento</th><th>Fechas de entrada</th><th class="num">Mín. noches</th><th class="num">Usos</th><th>Nota</th><th>Acumulable</th><th>Activo</th><th></th></tr></thead><tbody>'
     + (S.promos.length ? S.promos.map(p => `<tr><td><b>${esc(p.code)}</b></td><td>${p.kind === 'pct' ? p.value + ' %' : eur(p.value)}</td><td>${p.valid_from || p.valid_to ? `${p.valid_from ? fd(p.valid_from) : '…'} – ${p.valid_to ? fd(p.valid_to) : '…'}` : 'Siempre'}</td>
-      <td class="num">${p.min_nights || '—'}</td><td class="num">${p.uses}${p.max_uses ? ' / ' + p.max_uses : ''}</td><td class="muted">${esc(p.note)}</td>
+      <td class="num">${p.min_nights || '—'}</td><td class="num">${p.uses}${p.max_uses ? ' / ' + p.max_uses : ''}</td><td class="muted">${esc(p.note)}${p.no_weekend ? '<br>Solo domingo a viernes' : ''}${p.blackout ? `<br>Excepto: ${esc(p.blackout_label || p.blackout)}` : ''}</td>
       <td><label class="chk" title="Si lo desmarcas, al usar el código se quitan los demás descuentos"><input type="checkbox" data-stack="${p.id}" ${p.exclusive ? '' : 'checked'}></label></td>
       <td><label class="chk"><input type="checkbox" data-toggle="${p.id}" ${p.active ? 'checked' : ''}></label></td><td class="num"><button class="linkbtn" data-pdel="${p.id}">Borrar</button></td></tr>`).join('')
       : '<tr><td colspan="9" class="empty">Aún no hay códigos</td></tr>') + '</tbody>';
