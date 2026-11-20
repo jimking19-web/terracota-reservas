@@ -302,6 +302,8 @@ function fillGiftCard(s) {
   if (s.vouchers_enabled === '0' || !state.site.payments) return;
   gc.price = Math.round(Number(String(s.voucher_price || '180').replace(',', '.')) * 100);
   gc.max = parseInt(s.voucher_max_nights || '7', 10) || 7;
+  gc.prices = new Map();
+  for (const l of String(s.voucher_prices ?? '').split('\n')) { const [n, p] = l.split('|').map(x => x.trim()); const ni = parseInt(n, 10), pc = Math.round(Number(String(p || '').replace(',', '.')) * 100); if (ni > 0 && pc > 0) gc.prices.set(ni, pc); }
   if (!(gc.price > 0)) return;
   $('#regalo').hidden = false;
   const months = parseInt(s.voucher_months || '12', 10) || 12;
@@ -312,11 +314,18 @@ function fillGiftCard(s) {
   $('#gcList').innerHTML = incl.map(x => `<li>${iconFor(x)}${esc(x)}</li>`).join('');
   drawGiftCard();
 }
+function giftPrice(n) {
+  if (gc.prices?.has(n)) return gc.prices.get(n);
+  const keys = [...(gc.prices?.keys() || [])].filter(k => k < n);
+  if (keys.length) { const k = Math.max(...keys); return Math.round(gc.prices.get(k) / k * n); }
+  return gc.price * n;
+}
 function drawGiftCard() {
+  const total = giftPrice(gc.nights), full = gc.price * gc.nights;
   $('#gcNights').textContent = gc.nights;
-  $('#gcTotal').textContent = eur(gc.price * gc.nights, 0);
-  $('#gcPer').textContent = `${gc.nights} ${gc.nights === 1 ? 'noche' : 'noches'} · ${eur(gc.price, 0)}/noche`;
-  $('#gcBuy').textContent = `Comprar vale de ${eur(gc.price * gc.nights, 0)}`;
+  $('#gcTotal').innerHTML = (total < full ? `<s style="font-size:22px;color:var(--muted);font-weight:500;margin-right:8px">${eur(full)}</s>` : '') + eur(total);
+  $('#gcPer').textContent = `${gc.nights} ${gc.nights === 1 ? 'noche' : 'noches'} · ${eur(Math.round(total / gc.nights))}/noche`;
+  $('#gcBuy').textContent = `Comprar vale de ${eur(total)}`;
 }
 function bindGiftCard() {
   $$('[data-gn]').forEach(b => b.onclick = () => { gc.nights = Math.max(1, Math.min(gc.max || 7, gc.nights + Number(b.dataset.gn))); drawGiftCard(); });
@@ -332,7 +341,7 @@ function bindGiftCard() {
     if (!d.accept) return (err.textContent = 'Marca la casilla de condiciones');
     const btn = $('#gcBuy'); btn.disabled = true; btn.textContent = 'Preparando el pago…';
     const r = await api('/api/voucher', { method: 'POST', body: d });
-    if (r.ok && r.redirect) { track('pago', gc.price * gc.nights); location.href = r.redirect; return; }
+    if (r.ok && r.redirect) { track('pago', giftPrice(gc.nights)); location.href = r.redirect; return; }
     btn.disabled = false; drawGiftCard(); err.textContent = r.error || 'No se pudo iniciar el pago';
   });
   if (new URLSearchParams(location.search).get('vale') === 'cancelado') $('#gcError').textContent = 'El pago del vale se canceló. Puedes intentarlo de nuevo.';

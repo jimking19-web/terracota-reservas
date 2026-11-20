@@ -17,7 +17,22 @@ export function voucherConfig(site) {
     maxNights: Math.max(1, parseInt(site.voucher_max_nights ?? '7', 10) || 7),
     months: Math.max(1, parseInt(site.voucher_months ?? '12', 10) || 12),
     includes: site.voucher_includes ?? 'Botella de vino incluida',
+    prices: parsePrices(site.voucher_prices ?? '2|375'),
   };
+}
+
+// Precios especiales por número de noches ("2|375" por línea). Sin precio propio: precio por noche;
+// por encima del mayor tramo especial se mantiene su precio medio por noche.
+function parsePrices(txt) {
+  const m = new Map();
+  for (const l of String(txt || '').split('\n')) { const [n, p] = l.split('|').map(x => x.trim()); const ni = parseInt(n, 10), pc = Math.round(Number(String(p || '').replace(',', '.')) * 100); if (ni > 0 && pc > 0) m.set(ni, pc); }
+  return m;
+}
+export function voucherPrice(cfg, nights) {
+  if (cfg.prices.has(nights)) return cfg.prices.get(nights);
+  const keys = [...cfg.prices.keys()].filter(k => k < nights);
+  if (keys.length) { const k = Math.max(...keys); return Math.round(cfg.prices.get(k) / k * nights); }
+  return cfg.price * nights;
 }
 
 function newCode() {
@@ -57,7 +72,7 @@ export async function buyVoucher(env, site, url, b) {
   const rEmail = String(b.recipient_email || '').trim().toLowerCase();
   if (sendTo === 'recipient' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rEmail)) return { ok: false, error: 'Revisa el email de la persona que recibe el regalo' };
   if (!b.accept) return { ok: false, error: 'Acepta las condiciones del vale' };
-  const amount = cfg.price * nights;
+  const amount = voucherPrice(cfg, nights);
   let code; for (let i = 0; i < 5; i++) { code = newCode(); if (!(await db.prepare('SELECT 1 FROM vouchers WHERE code = ?').bind(code).first())) break; }
   const ins = await db.prepare(`INSERT INTO vouchers (code, nights, amount, buyer_name, buyer_email, recipient_name, recipient_email, message, send_to, status)
     VALUES (?,?,?,?,?,?,?,?,?, 'pending')`).bind(code, nights, amount, buyer.slice(0, 120), email, String(b.recipient_name || '').trim().slice(0, 120),
@@ -154,7 +169,7 @@ export async function createManualVoucher(db, site, b) {
   const nights = parseInt(b.nights, 10);
   if (!(nights >= 1 && nights <= 30)) return { ok: false, error: 'Noches no válidas' };
   let code; for (let i = 0; i < 5; i++) { code = newCode(); if (!(await db.prepare('SELECT 1 FROM vouchers WHERE code = ?').bind(code).first())) break; }
-  const amount = b.amount !== '' && b.amount != null ? Math.round(Number(String(b.amount).replace(',', '.')) * 100) : cfg.price * nights;
+  const amount = b.amount !== '' && b.amount != null ? Math.round(Number(String(b.amount).replace(',', '.')) * 100) : voucherPrice(cfg, nights);
   await db.prepare(`INSERT INTO vouchers (code, nights, amount, buyer_name, buyer_email, recipient_name, message, send_to, status, paid_at, expires_at, note)
     VALUES (?,?,?,?,?,?,?, 'buyer', 'active', ?, ?, ?)`).bind(code, nights, amount, String(b.buyer_name || '').slice(0, 120), String(b.buyer_email || '').trim().toLowerCase(),
     String(b.recipient_name || '').slice(0, 120), String(b.message || '').slice(0, 600), sqlNow(), addMonths(todayMadrid(), cfg.months), 'Creado a mano en el panel').run();

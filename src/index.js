@@ -25,7 +25,7 @@ export const DEFAULT_SETTINGS = {
   map_query: 'Bullas, Murcia',
   phone: '', email: '', whatsapp: '', instagram: '',
   gift_min_nights: '2',
-  vouchers_enabled: '1', voucher_price: '180', voucher_max_nights: '7', voucher_months: '12', voucher_includes: 'Botella de vino incluida',
+  vouchers_enabled: '1', voucher_price: '180', voucher_prices: '2|375', voucher_max_nights: '7', voucher_months: '12', voucher_includes: 'Botella de vino incluida',
   voucher_list: 'Botella de vino\nLeña para la chimenea\nCafé e infusiones\nBotellitas de agua de cortesía\nVelas aromáticas\nAlberca privada\nLimpieza a fondo antes de la llegada\nWiFi y aire acondicionado',
   welcome_amount: '10',
   gift_text: 'Botella de vino y leña para la chimenea',
