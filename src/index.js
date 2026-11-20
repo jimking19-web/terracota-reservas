@@ -3,7 +3,7 @@ import { addDays, diffDays, isDate, todayMadrid } from './dates.js';
 import { calendar, getUnit, loadContext, night, quote, money } from './pricing.js';
 import { exportIcal, syncAll, syncFeed } from './ical.js';
 import { track, stats, cleanup as cleanupAnalytics } from './analytics.js';
-import { addSubscriber, unsubscribePage, runMarketing, sendCampaign, marketingStats, CONSENT_TEXT } from './marketing.js';
+import { addSubscriber, unsubscribePage, runMarketing, sendCampaign, marketingStats, welcomeGift, CONSENT_TEXT } from './marketing.js';
 import { createCheckout, verifyWebhook, stripeRequest } from './stripe.js';
 import { runDeposits, placeHold, releaseHold, captureHold, depositCheckout, depositLink, releaseDate } from './deposit.js';
 import { guestEmail, ownerEmail, sendMail, mailEnabled } from './mail.js';
@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS = {
   map_query: 'Bullas, Murcia',
   phone: '', email: '', whatsapp: '', instagram: '',
   gift_min_nights: '2',
+  welcome_amount: '10',
   gift_text: 'Botella de vino y leña para la chimenea',
   faq: '¿A qué hora es la entrada y la salida?|La entrada es a partir de las 16:00 y la salida antes de las 10:30. Si necesitas otro horario, escríbenos y lo intentamos.\n¿Qué incluye la estancia?|Café e infusiones, agua de cortesía, alberca privada, velas aromáticas y limpieza a fondo antes de tu llegada. Y si te quedas 2 noches o más, te regalamos una botella de vino y leña para la chimenea.\n¿Cuántas personas caben?|El alojamiento es para un máximo de 3 personas.\n¿Hay descuento por quedarse más noches?|Sí. Al reservar 2 noches o más se aplica un descuento automático; lo verás en el desglose antes de pagar.\n¿Cómo se paga?|Con tarjeta a través de Stripe, una pasarela de pago segura. Recibirás la confirmación por email al momento.\n¿Puedo cancelar?|Consulta la política de cancelación más abajo. Si tienes cualquier duda, escríbenos por WhatsApp.\n¿Cómo llego?|Estamos en Bullas (Murcia). Tras reservar te enviamos la ubicación exacta y las indicaciones de acceso.',
   checkin_time: '16:00', checkout_time: '12:00',
@@ -195,7 +196,15 @@ async function publicApi(req, env, url, path) {
     if (b.website) return json({ ok: true });                       // honeypot
     if (!b.consent) return bad('Marca la casilla para aceptar recibir emails');
     const t = await addSubscriber(db, { email: b.email, name: b.name, source: 'web', consent: `${CONSENT_TEXT} (${sqlNow()} UTC)` });
-    return t ? json({ ok: true }) : bad('Revisa el email');
+    if (!t) return bad('Revisa el email');
+    const site = await getSettings(db);
+    const g = await welcomeGift(env, site, b.email).catch(() => null);
+    if (!g) return json({ ok: true });
+    if (g.already) return json({ ok: true, message: 'Ya estabas apuntado. Tu código de bienvenida ya se usó o caducó.' });
+    if (g.guest) return json({ ok: true, message: '¡Listo! Ya eres de casa: te avisaremos de fechas libres y ofertas.' });
+    // Si el email funciona, el código solo va al correo (así nos aseguramos de que el email es real)
+    return json({ ok: true, sent: g.sent, code: g.sent ? undefined : g.code,
+      message: g.sent ? '¡Listo! Te hemos enviado tu código de descuento por email (mira también en spam).' : `¡Listo! Tu código de descuento es ${g.code}` });
   }
 
   if (path === '/api/book' && req.method === 'POST') {

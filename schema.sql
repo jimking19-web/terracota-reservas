@@ -202,7 +202,8 @@ CREATE TABLE IF NOT EXISTS subscribers (
   consent TEXT,                  -- texto aceptado y fecha (NULL para huéspedes: art. 21.2 LSSI)
   token TEXT NOT NULL,           -- para el enlace de baja
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  unsubscribed_at TEXT
+  unsubscribed_at TEXT,
+  welcome_code TEXT              -- código de bienvenida enviado al apuntarse
 );
 CREATE TABLE IF NOT EXISTS campaigns (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -213,3 +214,4 @@ CREATE TABLE IF NOT EXISTS campaigns (
 -- ALTER TABLE bookings ADD COLUMN recovery_sent_at TEXT;
 -- ALTER TABLE bookings ADD COLUMN poststay_sent_at TEXT;
 -- ALTER TABLE bookings ADD COLUMN return_code TEXT;
+-- ALTER TABLE subscribers ADD COLUMN welcome_code TEXT;

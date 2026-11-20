@@ -107,7 +107,8 @@
           <label>Descuento del código para volver (%)<input name="mk_return_pct" type="number" min="0" max="50"></label>
           <label class="span2">Enlace para dejar reseña (Google, Airbnb…)<input name="review_url" placeholder="https://g.page/r/…/review"></label>
         </div>
-        <p class="hint">Los códigos para volver son personales, de un solo uso, válidos un año y no se acumulan con otros descuentos. Aparecen en «Descuentos y códigos».</p>
+        <div class="fgrid" style="margin-top:12px"><label>Regalo por apuntarse a la lista (€, 0 = sin regalo)<input name="welcome_amount" inputmode="decimal"></label></div>
+        <p class="hint">Los códigos para volver y los de bienvenida son personales, de un solo uso, válidos un año y se suman a los demás descuentos (por ejemplo, al 25 % de 2 noches). Aparecen en «Descuentos y códigos». El de bienvenida solo se envía por email, así te aseguras de que el email es real, y nunca a quien ya ha sido huésped.</p>
       </form>
       <form class="card" id="mkCampaign">
         <div class="card-h"><h2>Enviar un email a tu lista</h2><span class="muted small" id="mkCount"></span></div>

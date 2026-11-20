@@ -778,6 +778,7 @@ async function renderClientes() {
   f.mk_poststay.checked = S.settings.mk_poststay !== '0';
   f.mk_return_pct.value = S.settings.mk_return_pct ?? '10';
   f.review_url.value = S.settings.review_url || '';
+  f.welcome_amount.value = S.settings.welcome_amount ?? '10';
   $('#mkCount').textContent = `Se enviará a ${sub.active || 0} ${sub.active === 1 ? 'persona' : 'personas'}`;
   $('#mkCamps').innerHTML = d.campaigns.length ? `<h3>Enviados</h3><div class="table-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Asunto</th><th class="num">Enviados</th></tr></thead><tbody>${d.campaigns.map(c => `<tr><td>${esc(c.created_at.slice(0, 16))}</td><td>${esc(c.subject)}</td><td class="num">${c.sent}${c.failed ? ` <span class="muted">(${c.failed} fallidos)</span>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '';
   $('#mkList').innerHTML = '<thead><tr><th>Email</th><th>Nombre</th><th>Origen</th><th>Alta</th><th>Estado</th><th></th></tr></thead><tbody>' +
@@ -789,7 +790,7 @@ async function renderClientes() {
 $('#mkAuto').onsubmit = async e => {
   e.preventDefault();
   const f = e.target;
-  const d = { mk_recovery: f.mk_recovery.checked ? '1' : '0', mk_poststay: f.mk_poststay.checked ? '1' : '0', mk_return_pct: String(Math.max(0, Math.min(50, parseInt(f.mk_return_pct.value || '0', 10)))), review_url: f.review_url.value.trim() };
+  const d = { mk_recovery: f.mk_recovery.checked ? '1' : '0', mk_poststay: f.mk_poststay.checked ? '1' : '0', mk_return_pct: String(Math.max(0, Math.min(50, parseInt(f.mk_return_pct.value || '0', 10)))), review_url: f.review_url.value.trim(), welcome_amount: String(f.welcome_amount.value || '0').replace(',', '.') };
   if (await act(api('/api/admin/settings', 'PUT', d), 'Guardado')) { await refresh(); renderClientes(); }
 };
 async function campaign(test) {

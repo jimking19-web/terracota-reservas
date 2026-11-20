@@ -124,7 +124,7 @@ async function runPostStay(env, site, origin) {
     let code = '';
     if (pct > 0) {
       code = returnCode();
-      await db.prepare(`INSERT INTO promo_codes (code, kind, value, valid_from, valid_to, max_uses, note, exclusive) VALUES (?, 'pct', ?, ?, ?, 1, ?, 1)`)
+      await db.prepare(`INSERT INTO promo_codes (code, kind, value, valid_from, valid_to, max_uses, note, exclusive) VALUES (?, 'pct', ?, ?, ?, 1, ?, 0)`)
         .bind(code, pct, today, addDays(today, 365), `Para volver · ${b.name || b.email} (${b.ref})`).run();
     }
     const first = (b.name || '').split(' ')[0];
@@ -132,7 +132,7 @@ async function runPostStay(env, site, origin) {
     const codeHtml = code ? `<div style="margin:18px 0;padding:18px;border:1.5px dashed #b5573b;border-radius:16px;text-align:center;background:#fbf8f4">
         <div style="font-size:13px;color:#8a7b70">Para tu próxima escapada, un <b>${pct} % de descuento</b> reservando en nuestra web</div>
         <div style="font-family:Georgia,serif;font-size:28px;letter-spacing:.08em;color:#2a211c;margin-top:6px">${code}</div>
-        <div style="font-size:12.5px;color:#8a7b70;margin-top:4px">Válido un año · un solo uso</div></div>` : '';
+        <div style="font-size:12.5px;color:#8a7b70;margin-top:4px">Válido un año · un solo uso · se suma a los demás descuentos</div></div>` : '';
     const html = p(`Hola${first ? ' ' + esc(first) : ''}:`) +
       p(`Gracias por alojarte en <b>${esc(site.site_name)}</b>. Esperamos que hayas descansado y que la alberca, el vino y la calma de Bullas te hayan sentado tan bien como a nosotros.`) +
       review + codeHtml + p('Te esperamos de vuelta cuando quieras.');
@@ -187,4 +187,45 @@ export async function marketingStats(db) {
   ]);
   return { ok: true, subscribers: subs.results[0], bySource: bySource.results, recoverySent: rec.results[0].n, recovered: recWon.results[0],
     postStaySent: post.results[0].n, returnCodes: codes.results[0], campaigns: camps.results, list: list.results };
+}
+
+// ---------- regalo por apuntarse a la lista ----------
+function welcomeCode() {
+  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return 'HOLA-' + [...crypto.getRandomValues(new Uint8Array(5))].map(b => a[b % a.length]).join('');
+}
+// Devuelve { code, sent } o null si no hay regalo configurado
+export async function welcomeGift(env, site, email) {
+  const db = env.DB;
+  const amount = Math.round(Number(String(site.welcome_amount ?? '10').replace(',', '.')) * 100);
+  if (!(amount > 0)) return null;
+  email = String(email).trim().toLowerCase();
+  const sub = await db.prepare('SELECT * FROM subscribers WHERE email = ?').bind(email).first();
+  if (!sub || sub.unsubscribed_at) return null;
+  let code = sub.welcome_code;
+  if (code) {
+    const used = await db.prepare('SELECT uses FROM promo_codes WHERE code = ?').bind(code).first();
+    if (!used || used.uses > 0) return { code: null, already: true };
+  } else {
+    // Un regalo por email, y nunca a quien ya ha reservado con nosotros
+    const guest = await db.prepare("SELECT 1 FROM bookings WHERE lower(email) = ? AND status = 'confirmed' AND source != 'bloqueo' LIMIT 1").bind(email).first();
+    if (guest) return { code: null, guest: true };
+    code = welcomeCode();
+    const today = todayMadrid();
+    await db.batch([
+      db.prepare("INSERT INTO promo_codes (code, kind, value, valid_from, valid_to, max_uses, note, exclusive) VALUES (?, 'fixed', ?, NULL, ?, 1, ?, 0)").bind(code, amount, addDays(today, 365), `Bienvenida lista · ${email}`),
+      db.prepare('UPDATE subscribers SET welcome_code = ? WHERE id = ?').bind(code, sub.id),
+    ]);
+  }
+  if (!mailEnabled(env)) return { code, sent: false };
+  const origin = siteOrigin(site);
+  const html = p('¡Gracias por apuntarte!') +
+    p(`Como prometimos, aquí tienes <b>${money(amount)} de descuento</b> para tu primera reserva directa en ${esc(site.site_name)}. Escríbelo en «¿Tienes un código promocional?» al reservar:`) +
+    `<div style="margin:18px 0;padding:18px;border:1.5px dashed #b5573b;border-radius:16px;text-align:center;background:#fbf8f4">
+      <div style="font-family:Georgia,serif;font-size:28px;letter-spacing:.08em;color:#2a211c">${code}</div>
+      <div style="font-size:12.5px;color:#8a7b70;margin-top:4px">Un solo uso · válido un año · se suma a los demás descuentos</div></div>` +
+    p('De vez en cuando te avisaremos de fechas libres y ofertas. Nada más.');
+  const r = await sendMail(env, { to: email, fromName: site.site_name, replyTo: site.email || undefined, subject: `Tu descuento de ${money(amount)} en ${site.site_name}`,
+    html: mkEmail(site, origin, { title: 'Tu regalo de bienvenida', html, link: `${origin}/?utm_source=email-bienvenida#reservar`, label: 'Ver fechas libres', unsubToken: sub.token, image: site.hero_photo ? `${origin}/foto/${site.hero_photo}` : '' }) });
+  return { code, sent: r?.ok !== false };
 }

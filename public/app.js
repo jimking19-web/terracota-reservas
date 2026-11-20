@@ -58,6 +58,12 @@ function fillSettings(s) {
   document.title = `${s.site_name} · ${s.address}`;
   const lines = v => String(v || '').split('\n').map(x => x.trim()).filter(Boolean);
   $('#description').innerHTML = String(s.description || '').split(/\n\s*\n/).map(p => `<p>${esc(p)}</p>`).join('');
+  const welcome = Number(String(s.welcome_amount || '0').replace(',', '.'));
+  if (welcome > 0) {
+    const w = eur(Math.round(welcome * 100));
+    $('#newsTitle').textContent = `Llévate ${w} de descuento`;
+    $('#newsText').textContent = `Apúntate y te enviamos por email un código de ${w} para tu primera reserva directa. Después, solo algún aviso de fechas libres y ofertas.`;
+  }
   const giftN = parseInt(s.gift_min_nights || '0', 10);
   if (giftN > 0 && s.gift_text) {
     $('#gift').hidden = false;
@@ -443,7 +449,7 @@ function bind() {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.get('email') || '')) { msg.textContent = 'Revisa el email'; msg.classList.add('err'); return; }
     if (!f.get('consent')) { msg.textContent = 'Marca la casilla para poder escribirte'; msg.classList.add('err'); return; }
     const r = await api('/api/subscribe', { method: 'POST', body: { email: f.get('email'), consent: true, website: f.get('website') } });
-    if (r.ok) { e.target.reset(); msg.textContent = '¡Listo! Te avisaremos de fechas libres y ofertas.'; msg.classList.add('ok'); track('contacto', 'lista de ofertas'); }
+    if (r.ok) { e.target.reset(); msg.textContent = r.message || '¡Listo! Te avisaremos de fechas libres y ofertas.'; msg.classList.add('ok'); track('contacto', 'lista de ofertas'); }
     else { msg.textContent = r.error || 'No se pudo guardar'; msg.classList.add('err'); }
   });
 
