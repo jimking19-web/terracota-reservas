@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS = {
   gift_min_nights: '2',
   vouchers_enabled: '1', voucher_price: '180', voucher_prices: '2|375', voucher_max_nights: '7', voucher_months: '12', voucher_includes: 'Botella de vino incluida',
   voucher_list: 'Botella de vino\nLeña para la chimenea\nCafé e infusiones\nBotellitas de agua de cortesía\nVelas aromáticas\nAlberca privada\nLimpieza a fondo antes de la llegada\nWiFi y aire acondicionado',
-  welcome_amount: '10',
+  welcome_amount: '5',
   gift_text: 'Botella de vino y leña para la chimenea',
   faq: '¿A qué hora es la entrada y la salida?|La entrada es a partir de las 16:00 y la salida antes de las 10:30. Si necesitas otro horario, escríbenos y lo intentamos.\n¿Qué incluye la estancia?|Café e infusiones, agua de cortesía, alberca privada, velas aromáticas y limpieza a fondo antes de tu llegada. Y si te quedas 2 noches o más, te regalamos una botella de vino y leña para la chimenea.\n¿Cuántas personas caben?|El alojamiento es para un máximo de 3 personas.\n¿Hay descuento por quedarse más noches?|Sí. Al reservar 2 noches o más se aplica un descuento automático; lo verás en el desglose antes de pagar.\n¿Cómo se paga?|Con tarjeta a través de Stripe, una pasarela de pago segura. Recibirás la confirmación por email al momento.\n¿Puedo cancelar?|Consulta la política de cancelación más abajo. Si tienes cualquier duda, escríbenos por WhatsApp.\n¿Cómo llego?|Estamos en Bullas (Murcia). Tras reservar te enviamos la ubicación exacta y las indicaciones de acceso.',
   checkin_time: '16:00', checkout_time: '12:00',

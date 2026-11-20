@@ -197,7 +197,7 @@ function welcomeCode() {
 // Devuelve { code, sent } o null si no hay regalo configurado
 export async function welcomeGift(env, site, email) {
   const db = env.DB;
-  const amount = Math.round(Number(String(site.welcome_amount ?? '10').replace(',', '.')) * 100);
+  const amount = Math.round(Number(String(site.welcome_amount ?? '5').replace(',', '.')) * 100);
   if (!(amount > 0)) return null;
   email = String(email).trim().toLowerCase();
   const sub = await db.prepare('SELECT * FROM subscribers WHERE email = ?').bind(email).first();

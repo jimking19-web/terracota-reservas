@@ -398,3 +398,11 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--t
 .gc-incl li { display: flex; gap: 10px; align-items: center; font-size: 14.5px; font-weight: 600; }
 .gc-incl svg { width: 22px; height: 22px; color: var(--terra); flex: none; }
 @media (max-width: 560px) { .gc-incl ul { grid-template-columns: 1fr; } }
+
+/* Barra superior de bienvenida */
+.topbar { position: fixed; inset: 0 0 auto; z-index: 60; height: 38px; display: flex; align-items: center; justify-content: center; gap: 12px; background: var(--terra); color: #fff; text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 0 14px; text-align: center; }
+.topbar b { white-space: nowrap; text-decoration: underline; text-underline-offset: 3px; }
+.topbar:hover { background: var(--terra-d); }
+body.has-topbar .nav { top: 38px; }
+html:has(body.has-topbar) { scroll-padding-top: 118px; }
+@media (max-width: 560px) { .topbar { font-size: 12.5px; gap: 8px; } }
