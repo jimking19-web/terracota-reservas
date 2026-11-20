@@ -236,6 +236,20 @@
 
     <!-- CÓDIGOS -->
     <section data-view="codigos" class="view" hidden>
+      <div class="card">
+        <div class="card-h"><h2>Vales regalo</h2><span><button type="button" class="btn" id="vcNew">+ Vale a mano</button> <a class="btn" href="/#regalo" target="_blank">Ver en la web ↗</a></span></div>
+        <form id="vcCfg" class="fgrid">
+          <label class="chk"><input type="checkbox" name="vouchers_enabled"> Vender vales en la web</label>
+          <label>Precio por noche €<input name="voucher_price" inputmode="decimal"></label>
+          <label>Máximo de noches<input name="voucher_max_nights" type="number" min="1" max="30"></label>
+          <label>Validez (meses)<input name="voucher_months" type="number" min="1" max="36"></label>
+          <label class="span2">Qué incluye (sale en el vale)<input name="voucher_includes" placeholder="Botella de vino incluida"></label>
+          <div class="field"><span>&nbsp;</span><button class="btn primary">Guardar</button></div>
+        </form>
+        <p class="hint">El vale cubre las noches compradas, en las fechas que elijan (según disponibilidad). Al reservar escriben el código REGALO-… y, si cubre toda la estancia, la reserva se confirma sin pagar nada más.</p>
+        <div class="table-wrap"><table class="tbl" id="vcTable"></table></div>
+      </div>
+
       <form class="card" id="promoForm">
         <div class="card-h"><h2 id="promoTitle">Nuevo código promocional</h2><span><button type="button" class="btn" id="promoCancel" hidden>Cancelar</button> <button class="btn primary" id="promoSave">Crear código</button></span></div>
         <div class="fgrid">

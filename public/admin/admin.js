@@ -483,7 +483,38 @@ $('#simGo').onclick = async () => {
 };
 
 // ---------- CÓDIGOS ----------
+const VC_STATUS = { active: ['Activo', 't-confirmed'], used: ['Usado', 't-manual'], cancelled: ['Anulado', 't-cancelled'], pending: ['Pago pendiente', 't-pending'] };
+async function renderVouchers() {
+  const f = $('#vcCfg');
+  f.vouchers_enabled.checked = S.settings.vouchers_enabled !== '0';
+  for (const k of ['voucher_price', 'voucher_max_nights', 'voucher_months', 'voucher_includes']) f[k].value = S.settings[k] ?? '';
+  const r = await api('/api/admin/vouchers');
+  const list = r.vouchers || [];
+  $('#vcTable').innerHTML = '<thead><tr><th>Código</th><th>Noches</th><th class="num">Importe</th><th>Compra</th><th>Para</th><th>Válido hasta</th><th>Estado</th><th></th></tr></thead><tbody>' +
+    (list.length ? list.map(v => { const [st, cls] = VC_STATUS[v.status] || [v.status, '']; return `<tr><td><a href="/vale?c=${esc(v.code)}" target="_blank"><b>${esc(v.code)}</b></a></td><td>${v.nights}</td><td class="num">${eur(v.amount)}</td>
+      <td>${esc(v.buyer_name || '')}<div class="muted small">${esc(v.buyer_email || '')}</div></td><td>${esc(v.recipient_name || '')}<div class="muted small">${esc(v.recipient_email || '')}</div></td>
+      <td>${v.expires_at ? fd(v.expires_at, { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
+      <td><span class="tag ${cls}">${st}</span>${v.booking_ref && v.status === 'used' ? `<div class="muted small">${esc(v.booking_ref)} · ${fd(v.booking_checkin)}</div>` : ''}</td>
+      <td class="num">${v.status === 'active' ? `<button class="linkbtn" data-vcsend="${v.id}">Reenviar</button> · <button class="linkbtn" data-vcoff="${v.id}">Anular</button>` : ''}</td></tr>`; }).join('')
+      : '<tr><td colspan="8" class="empty">Aún no se ha vendido ningún vale</td></tr>') + '</tbody>';
+  $$('[data-vcsend]').forEach(b => b.onclick = async () => { if (await act(api('/api/admin/vouchers/' + b.dataset.vcsend, 'PATCH', { resend: true }), 'Vale reenviado por email')) renderVouchers(); });
+  $$('[data-vcoff]').forEach(b => b.onclick = async () => { if (confirm('¿Anular este vale? Ya no se podrá usar. (Si lo pagaron con tarjeta, el reembolso se hace en Stripe.)') && await act(api('/api/admin/vouchers/' + b.dataset.vcoff, 'PATCH', { status: 'cancelled' }), 'Vale anulado')) renderVouchers(); });
+}
+$('#vcCfg').onsubmit = async e => {
+  e.preventDefault(); const f = e.target;
+  const d = { vouchers_enabled: f.vouchers_enabled.checked ? '1' : '0', voucher_price: f.voucher_price.value.trim(), voucher_max_nights: f.voucher_max_nights.value.trim(), voucher_months: f.voucher_months.value.trim(), voucher_includes: f.voucher_includes.value.trim() };
+  if (await act(api('/api/admin/settings', 'PUT', d), 'Vales guardados')) { await refresh(); renderVouchers(); }
+};
+$('#vcNew').onclick = async () => {
+  const nights = prompt('¿Cuántas noches tiene el vale?', '2'); if (!nights) return;
+  const recipient = prompt('¿Para quién es? (opcional)', '') ?? '';
+  const amount = prompt('Importe cobrado en € (vacío = precio de la web)', '') ?? '';
+  const r = await act(api('/api/admin/vouchers', 'POST', { nights, recipient_name: recipient, amount, buyer_name: 'Venta directa' }), 'Vale creado');
+  if (r) { renderVouchers(); window.open('/vale?c=' + r.code, '_blank'); }
+};
+
 function renderPromos() {
+  renderVouchers();
   $('#promoTable').innerHTML = '<thead><tr><th>Código</th><th>Descuento</th><th>Fechas de entrada</th><th class="num">Mín. noches</th><th class="num">Usos</th><th>Nota</th><th>Acumulable</th><th>Activo</th><th></th></tr></thead><tbody>'
     + (S.promos.length ? S.promos.map(p => `<tr><td><b>${esc(p.code)}</b></td><td>${p.kind === 'pct' ? p.value + ' %' : eur(p.value)}</td><td>${p.valid_from || p.valid_to ? `${p.valid_from ? fd(p.valid_from) : '…'} – ${p.valid_to ? fd(p.valid_to) : '…'}` : 'Siempre'}</td>
       <td class="num">${p.min_nights || '—'}</td><td class="num">${p.uses}${p.max_uses ? ' / ' + p.max_uses : ''}</td><td class="muted">${esc(p.note)}${p.no_weekend ? '<br>Solo domingo a viernes' : ''}${p.blackout ? `<br>Excepto: ${esc(p.blackout_label || p.blackout)}` : ''}</td>

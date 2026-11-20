@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vale regalo · Terracota Suites</title><meta name="robots" content="noindex">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css?v=20261120d">
+<style>
+ body{background:var(--sand);min-height:100svh;display:grid;place-items:center;padding:24px}
+ .wrapv{width:min(720px,100%)}
+ .voucher{position:relative;background:#fbf8f4;border-radius:28px;box-shadow:var(--shadow);overflow:hidden;display:grid;grid-template-columns:1fr 1.15fr}
+ .v-photo{background-size:cover;background-position:center;min-height:380px}
+ .v-body{padding:36px 34px;display:flex;flex-direction:column;gap:10px;border-left:2px dashed var(--line)}
+ .v-body .eyebrow{margin:0}
+ .v-title{font-family:var(--display);font-size:42px;line-height:1.02;margin:4px 0 6px}
+ .v-to{color:var(--ink-2)}
+ .v-msg{font-family:var(--display);font-style:italic;font-size:21px;color:var(--ink);margin:6px 0}
+ .v-code{font-family:var(--display);font-size:30px;letter-spacing:.1em;border:1.5px dashed var(--terra);border-radius:14px;padding:10px 14px;text-align:center;margin-top:auto}
+ .v-small{font-size:12.5px;color:var(--muted);text-align:center}
+ .v-how{font-size:14px;color:var(--ink-2);margin-top:20px;text-align:center}
+ .v-actions{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
+ .stamp{position:absolute;top:18px;left:18px;background:var(--terra);color:#fff;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:800;letter-spacing:.08em}
+ @media (max-width:640px){.voucher{grid-template-columns:1fr}.v-photo{min-height:200px}.v-body{border-left:0;border-top:2px dashed var(--line)}}
+ @media print{body{background:#fff;padding:0}.v-actions,.v-how .noprint{display:none}.voucher{box-shadow:none;border:1px solid #ddd}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head>
+<body><div class="wrapv" id="root"><p class="muted" style="text-align:center">Cargando tu vale…</p></div>
+<script type="module">
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fd=s=>new Date(s+'T00:00:00Z').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
+const p=new URLSearchParams(location.search); const code=(p.get('c')||'').toUpperCase();
+let tries=0;
+async function load(){
+  if(!/^REGALO-[A-Z0-9]{6}$/.test(code)){$('#root').innerHTML='<p style="text-align:center">Vale no encontrado.</p>';return}
+  const [v,site]=await Promise.all([fetch('/api/voucher/'+code).then(r=>r.json()),fetch('/api/site').then(r=>r.json())]);
+  if(!v.ok){$('#root').innerHTML=`<p style="text-align:center">${esc(v.error)}</p>`;return}
+  if(v.status==='pending'&&tries<8){tries++;$('#root').innerHTML='<p style="text-align:center" class="muted">Confirmando el pago…</p>';return setTimeout(load,2000)}
+  if(v.status==='pending'){$('#root').innerHTML='<p style="text-align:center">El pago de este vale aún no se ha completado.</p><p style="text-align:center"><a class="btn btn-terra" href="/#regalo">Volver</a></p>';return}
+  const s=site.settings, hero=s.hero_photo?`/foto/${s.hero_photo}`:'';
+  const n=`${v.nights} ${v.nights===1?'noche':'noches'}`;
+  $('#root').innerHTML=`<div class="voucher">
+    <div class="v-photo" style="background-image:url(${hero})"></div>
+    <div class="v-body">
+      <p class="eyebrow">Vale regalo · ${esc(s.site_name)}</p>
+      <div class="v-title">${n} para perderse en Bullas</div>
+      ${v.recipient?`<div class="v-to">Para <b>${esc(v.recipient)}</b>${v.buyer?` · de parte de <b>${esc(v.buyer)}</b>`:''}</div>`:''}
+      ${v.message?`<div class="v-msg">«${esc(v.message)}»</div>`:''}
+      <div class="v-small">${esc(s.voucher_includes||'')}${s.voucher_includes?' · ':''}Sin fecha · válido para estancias hasta el ${fd(v.expires)}</div>
+      <div class="v-code">${esc(v.code)}</div>
+      ${v.status==='used'?'<div class="v-small"><b>Este vale ya se ha usado</b></div>':''}
+    </div>${v.status==='used'?'<span class="stamp">USADO</span>':''}</div>
+    <p class="v-how">Para usarlo, elige tus fechas en <b>${esc(location.host)}</b> y escribe el código al reservar.${s.phone?` O llámanos al ${esc(s.phone)}.`:''}</p>
+    <div class="v-actions"><button class="btn btn-terra" onclick="print()">Imprimir o guardar en PDF</button><a class="btn btn-ghost" href="/#reservar">Reservar con este vale</a></div>`;
+}
+load();
+</script></body></html>

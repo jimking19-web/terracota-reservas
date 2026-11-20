@@ -5,6 +5,7 @@ import { exportIcal, syncAll, syncFeed } from './ical.js';
 import { track, stats, cleanup as cleanupAnalytics } from './analytics.js';
 import { addSubscriber, unsubscribePage, runMarketing, sendCampaign, marketingStats, welcomeGift, CONSENT_TEXT } from './marketing.js';
 import { createCheckout, verifyWebhook, stripeRequest } from './stripe.js';
+import { isVoucherCode, buyVoucher, activateVoucher, voucherPublic, adminVouchers, createManualVoucher, sendVoucherEmails } from './vouchers.js';
 import { runDeposits, placeHold, releaseHold, captureHold, depositCheckout, depositLink, releaseDate } from './deposit.js';
 import { guestEmail, ownerEmail, sendMail, mailEnabled } from './mail.js';
 import { ensureInvoice, invoiceReady, invoiceUrl, serveInvoice, sampleBooking, refToken, invoiceHtml } from './invoice.js';
@@ -24,6 +25,7 @@ export const DEFAULT_SETTINGS = {
   map_query: 'Bullas, Murcia',
   phone: '', email: '', whatsapp: '', instagram: '',
   gift_min_nights: '2',
+  vouchers_enabled: '1', voucher_price: '180', voucher_max_nights: '7', voucher_months: '12', voucher_includes: 'Botella de vino incluida',
   welcome_amount: '10',
   gift_text: 'Botella de vino y leña para la chimenea',
   faq: '¿A qué hora es la entrada y la salida?|La entrada es a partir de las 16:00 y la salida antes de las 10:30. Si necesitas otro horario, escríbenos y lo intentamos.\n¿Qué incluye la estancia?|Café e infusiones, agua de cortesía, alberca privada, velas aromáticas y limpieza a fondo antes de tu llegada. Y si te quedas 2 noches o más, te regalamos una botella de vino y leña para la chimenea.\n¿Cuántas personas caben?|El alojamiento es para un máximo de 3 personas.\n¿Hay descuento por quedarse más noches?|Sí. Al reservar 2 noches o más se aplica un descuento automático; lo verás en el desglose antes de pagar.\n¿Cómo se paga?|Con tarjeta a través de Stripe, una pasarela de pago segura. Recibirás la confirmación por email al momento.\n¿Puedo cancelar?|Consulta la política de cancelación más abajo. Si tienes cualquier duda, escríbenos por WhatsApp.\n¿Cómo llego?|Estamos en Bullas (Murcia). Tras reservar te enviamos la ubicación exacta y las indicaciones de acceso.',
@@ -126,7 +128,8 @@ async function confirmBooking(env, booking, paymentId, origin) {
   const conflict = [];
   for (let d = booking.checkin; d < booking.checkout; d = addDays(d, 1)) if (!night(ctx, d).free) conflict.push(d);
   if (conflict.length) await db.prepare('UPDATE bookings SET internal_note = ? WHERE id = ?').bind(`⚠️ CONFLICTO: noches ocupadas por otra reserva/bloqueo (${conflict.join(', ')}). Revisar.`, booking.id).run();
-  if (booking.promo_code) await db.prepare('UPDATE promo_codes SET uses = uses + 1 WHERE upper(code) = upper(?)').bind(booking.promo_code).run();
+  if (booking.promo_code && isVoucherCode(booking.promo_code)) await db.prepare("UPDATE vouchers SET status = 'used', used_at = ?, booking_id = ? WHERE code = ?").bind(sqlNow(), booking.id, booking.promo_code.toUpperCase()).run();
+  else if (booking.promo_code) await db.prepare('UPDATE promo_codes SET uses = uses + 1 WHERE upper(code) = upper(?)').bind(booking.promo_code).run();
   if (booking.deposit > 0 && paymentId && env.STRIPE_SECRET_KEY) {
     try {
       const pi = await stripeRequest(env, 'GET', `/payment_intents/${paymentId}`);
@@ -249,6 +252,18 @@ async function publicApi(req, env, url, path) {
       }
     }
 
+    // Vale regalo: queda apartado para esta reserva; si cubre todo, la reserva se confirma sin pasar por el pago
+    if (booking.promo_code && isVoucherCode(booking.promo_code)) {
+      await db.batch([
+        db.prepare('UPDATE vouchers SET booking_id = ? WHERE code = ?').bind(booking.id, booking.promo_code),
+        db.prepare("UPDATE bookings SET internal_note = trim(coalesce(internal_note, '') || ' Vale regalo ' || ? || ': incluye botella de vino.') WHERE id = ?").bind(booking.promo_code, booking.id),
+      ]);
+      if (booking.total === 0) {
+        await confirmBooking(env, { ...booking, stripe_payment: null }, null, url.origin);
+        return json({ ok: true, ref: booking.ref, mode: 'voucher', redirect: `/reserva?ref=${booking.ref}` });
+      }
+    }
+
     if (!usingStripe) {
       const site = await getSettings(db);
       const o = url.origin;
@@ -269,7 +284,18 @@ async function publicApi(req, env, url, path) {
     }
   }
 
+  if (path === '/api/voucher' && req.method === 'POST') {
+    const b = await body(req);
+    if (b.website) return json({ ok: true });
+    const r = await buyVoucher(env, await getSettings(db), url, b);
+    return r.ok ? json(r) : bad(r.error);
+  }
+
   let m;
+  if ((m = path.match(/^\/api\/voucher\/(REGALO-[A-Z0-9]{6})$/i)) && req.method === 'GET') {
+    const r = await voucherPublic(env, m[1], url.origin);
+    return r.ok ? json(r) : bad(r.error, 404);
+  }
   if ((m = path.match(/^\/api\/booking\/(TS-[A-Z0-9]{6})$/)) && req.method === 'GET') {
     const b = await db.prepare('SELECT b.*, u.name AS unit_name FROM bookings b JOIN units u ON u.id = b.unit_id WHERE ref = ?').bind(m[1]).first();
     if (!b) return bad('Reserva no encontrada', 404);
@@ -296,6 +322,11 @@ async function publicApi(req, env, url, path) {
     const evt = JSON.parse(payload);
     const s = evt.data?.object || {};
     const ref = s.metadata?.ref || s.client_reference_id;
+    if (s.metadata?.kind === 'voucher' && s.metadata.voucher) {
+      if ((evt.type === 'checkout.session.completed' || evt.type === 'checkout.session.async_payment_succeeded') && s.payment_status === 'paid') await activateVoucher(env, s.metadata.voucher, s.payment_intent, url.origin);
+      else if (evt.type === 'checkout.session.expired') await db.prepare("UPDATE vouchers SET status = 'cancelled' WHERE code = ? AND status = 'pending'").bind(s.metadata.voucher).run();
+      return json({ received: true });
+    }
     if (ref && s.metadata?.kind === 'deposit') {
       // El huésped ha dejado la fianza él mismo (retención manual)
       if (evt.type === 'checkout.session.completed' && s.payment_intent) {
@@ -493,6 +524,17 @@ async function adminApi(req, env, url, path) {
 
   if (path === '/api/admin/analytics' && req.method === 'GET') return json(await stats(db, parseInt(url.searchParams.get('days') || '30', 10)));
 
+  if (path === '/api/admin/vouchers' && req.method === 'GET') return json({ ok: true, vouchers: await adminVouchers(db) });
+  if (path === '/api/admin/vouchers' && req.method === 'POST') { const r = await createManualVoucher(db, await getSettings(db), b); return r.ok ? json(r) : bad(r.error); }
+  if ((m = path.match(/^\/api\/admin\/vouchers\/(\d+)$/)) && req.method === 'PATCH') {
+    const v = await db.prepare('SELECT * FROM vouchers WHERE id = ?').bind(Number(m[1])).first();
+    if (!v) return bad('Vale no encontrado', 404);
+    if (b.status === 'cancelled' && v.status !== 'used') await db.prepare("UPDATE vouchers SET status = 'cancelled' WHERE id = ?").bind(v.id).run();
+    else if (b.status === 'active' && v.status === 'cancelled' && v.paid_at) await db.prepare("UPDATE vouchers SET status = 'active' WHERE id = ?").bind(v.id).run();
+    if (b.resend) { if (!mailEnabled(env)) return bad('Primero activa los emails'); await sendVoucherEmails(env, await getSettings(db), v, url.origin); }
+    if ('expires_at' in b && isDate(b.expires_at)) await db.prepare('UPDATE vouchers SET expires_at = ? WHERE id = ?').bind(b.expires_at, v.id).run();
+    return json({ ok: true });
+  }
   if (path === '/api/admin/marketing' && req.method === 'GET') return json(await marketingStats(db));
   if (path === '/api/admin/campaign' && req.method === 'POST') {
     const site = await getSettings(db);

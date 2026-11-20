@@ -215,3 +215,19 @@ CREATE TABLE IF NOT EXISTS campaigns (
 -- ALTER TABLE bookings ADD COLUMN poststay_sent_at TEXT;
 -- ALTER TABLE bookings ADD COLUMN return_code TEXT;
 -- ALTER TABLE subscribers ADD COLUMN welcome_code TEXT;
+
+-- Vales regalo (por noches, sin fecha)
+CREATE TABLE IF NOT EXISTS vouchers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT UNIQUE NOT NULL,          -- REGALO-XXXXXX
+  nights INTEGER NOT NULL,
+  amount INTEGER NOT NULL,            -- pagado, en céntimos
+  buyer_name TEXT, buyer_email TEXT,
+  recipient_name TEXT, recipient_email TEXT, message TEXT,
+  send_to TEXT NOT NULL DEFAULT 'buyer',   -- buyer | recipient
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending | active | used | cancelled
+  stripe_session TEXT, stripe_payment TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  paid_at TEXT, expires_at TEXT,       -- válido para estancias hasta esta fecha
+  booking_id INTEGER, used_at TEXT, note TEXT
+);

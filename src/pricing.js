@@ -1,5 +1,6 @@
 // Motor de precios y disponibilidad. Todos los importes en céntimos (enteros).
 import { addDays, diffDays, eachNight, isDate, todayMadrid, weekday } from './dates.js';
+import { checkVoucher, isVoucherCode } from './vouchers.js';
 
 // Fechas excluidas de un código: "2026-12-04..2026-12-07, 2026-12-24" → [[desde, hasta], …] (noches, ambas incluidas)
 export function promoBlackout(p) {
@@ -133,8 +134,21 @@ export async function quote(db, unit, { checkin, checkout, guests, promo, extras
   let promoApplied = null, promoError = null;
   if (promo && String(promo).trim()) {
     const code = String(promo).trim().toUpperCase();
-    const p = await db.prepare('SELECT * FROM promo_codes WHERE upper(code) = ? AND active = 1').bind(code).first();
-    if (!p) promoError = 'Código no válido';
+    const p = isVoucherCode(code) ? null : await db.prepare('SELECT * FROM promo_codes WHERE upper(code) = ? AND active = 1').bind(code).first();
+    if (isVoucherCode(code)) {
+      // Vale regalo: paga las noches que cubre (el alojamiento ya con sus descuentos automáticos)
+      const r = await checkVoucher(db, code, { checkin, excludeBookingId: opts.excludeBookingId || null });
+      if (r.error) promoError = r.error;
+      else {
+        const v = r.voucher, covered = Math.min(v.nights, nights);
+        const base = lodging + discounts;
+        const amt = Math.min(base, Math.round(base * covered / nights));
+        discounts -= amt;
+        lines.push({ type: 'voucher', label: `Vale regalo ${v.code} (${covered} ${covered === 1 ? 'noche' : 'noches'}${v.nights > nights ? `; el vale es de ${v.nights} y las demás se pierden` : ''})`, amount: -amt });
+        promoApplied = v.code;
+      }
+    }
+    else if (!p) promoError = 'Código no válido';
     else if (p.unit_id && p.unit_id !== unit.id) promoError = 'Código no válido para este alojamiento';
     else if (p.valid_from && checkin < p.valid_from) promoError = 'Código no válido para esas fechas';
     else if (p.valid_to && checkin > p.valid_to) promoError = 'Código caducado para esas fechas';

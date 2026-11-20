@@ -64,6 +64,7 @@ function fillSettings(s) {
     $('#newsTitle').textContent = `Llévate ${w} de descuento`;
     $('#newsText').textContent = `Apúntate y te enviamos por email un código de ${w} para tu primera reserva directa. Después, solo algún aviso de fechas libres y ofertas.`;
   }
+  fillGiftCard(s);
   const giftN = parseInt(s.gift_min_nights || '0', 10);
   if (giftN > 0 && s.gift_text) {
     $('#gift').hidden = false;
@@ -145,6 +146,8 @@ function fillPhotos(photos) {
   const intro = gen.find(p => p.id !== hero) || gen[0];
   $('#introPhoto').innerHTML = intro ? `<img src="/foto/${intro.id}" alt="${esc(intro.caption || state.unit.name)}" loading="lazy">` : '<div class="ph">Terracota</div>';
   fillPatio(gen);
+  const gcP = gen.find(p => /vela/i.test(p.caption || '')) || gen.find(p => p.category === 'bano') || gen[0];
+  if (gcP) $('#gcPhoto').innerHTML = `<img src="/foto/${gcP.id}" alt="" loading="lazy">`;
   const cats = PHOTO_CATS.filter(([k]) => gen.some(p => p.category === k));
   const inside = gen.filter(p => p.category !== PATIO_CAT);
   $('#galTabs').innerHTML = cats.length ? [['', 'Todas'], ...cats].map(([k, l]) => `<button type="button" role="tab" data-cat="${k}">${esc(l)} <small>${k ? gen.filter(p => p.category === k).length : inside.length}</small></button>`).join('') : '';
@@ -292,6 +295,45 @@ async function getQuote() {
   renderSummary();
 }
 
+// ---------- vales regalo ----------
+const gc = { nights: 2 };
+function fillGiftCard(s) {
+  if (s.vouchers_enabled === '0' || !state.site.payments) return;
+  gc.price = Math.round(Number(String(s.voucher_price || '180').replace(',', '.')) * 100);
+  gc.max = parseInt(s.voucher_max_nights || '7', 10) || 7;
+  if (!(gc.price > 0)) return;
+  $('#regalo').hidden = false;
+  const months = parseInt(s.voucher_months || '12', 10) || 12;
+  $('#gcPoints').innerHTML = [`${eur(gc.price, 0)} por noche${s.voucher_includes ? ' · ' + s.voucher_includes.toLowerCase() : ''}`, 'Sin fecha: lo usan cuando quieran', `Válido durante ${months === 12 ? 'un año' : months + ' meses'}`, 'Lo recibes al momento por email, listo para imprimir']
+    .map(x => `<li>${esc(x)}</li>`).join('');
+  drawGiftCard();
+}
+function drawGiftCard() {
+  $('#gcNights').textContent = gc.nights;
+  $('#gcTotal').textContent = eur(gc.price * gc.nights, 0);
+  $('#gcPer').textContent = `${gc.nights} ${gc.nights === 1 ? 'noche' : 'noches'} · ${eur(gc.price, 0)}/noche`;
+  $('#gcBuy').textContent = `Comprar vale de ${eur(gc.price * gc.nights, 0)}`;
+}
+function bindGiftCard() {
+  $$('[data-gn]').forEach(b => b.onclick = () => { gc.nights = Math.max(1, Math.min(gc.max || 7, gc.nights + Number(b.dataset.gn))); drawGiftCard(); });
+  $$('#gcForm input[name=send_to]').forEach(r => r.onchange = () => { const rec = $('#gcForm input[name=send_to]:checked').value === 'recipient'; $('#gcForm input[name=recipient_email]').hidden = !rec; });
+  $('#gcForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = new FormData(e.target), err = $('#gcError');
+    const d = Object.fromEntries(f.entries()); d.accept = !!f.get('accept'); d.nights = gc.nights;
+    err.textContent = '';
+    if (!d.buyer_name || d.buyer_name.trim().length < 2) return (err.textContent = 'Indica tu nombre');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.buyer_email || '')) return (err.textContent = 'Revisa tu email');
+    if (d.send_to === 'recipient' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.recipient_email || '')) return (err.textContent = 'Revisa el email de quien lo recibe');
+    if (!d.accept) return (err.textContent = 'Marca la casilla de condiciones');
+    const btn = $('#gcBuy'); btn.disabled = true; btn.textContent = 'Preparando el pago…';
+    const r = await api('/api/voucher', { method: 'POST', body: d });
+    if (r.ok && r.redirect) { track('pago', gc.price * gc.nights); location.href = r.redirect; return; }
+    btn.disabled = false; drawGiftCard(); err.textContent = r.error || 'No se pudo iniciar el pago';
+  });
+  if (new URLSearchParams(location.search).get('vale') === 'cancelado') $('#gcError').textContent = 'El pago del vale se canceló. Puedes intentarlo de nuevo.';
+}
+
 function giftLine(nights) {
   const s = state.site.settings, n = parseInt(s.gift_min_nights || '0', 10);
   if (!n || !s.gift_text) return '';
@@ -315,7 +357,7 @@ function renderSummary() {
   const pm = $('#promoMsg');
   pm.className = 'promo-msg';
   pm.textContent = '';
-  if (q?.ok && state.promo) { if (q.promo) { pm.textContent = `Código ${q.promo} aplicado`; pm.classList.add('ok'); } else if (q.promoError) { pm.textContent = q.promoError; pm.classList.add('err'); } }
+  if (q?.ok && state.promo) { if (q.promo) { pm.textContent = q.promo.startsWith('REGALO-') ? `Vale regalo ${q.promo} aplicado` : `Código ${q.promo} aplicado`; pm.classList.add('ok'); } else if (q.promoError) { pm.textContent = q.promoError; pm.classList.add('err'); } }
   renderExtras(q);
   if (q?.ok) {
     $('#sumLines').innerHTML = q.lines.map(l => `<div class="row ${l.type}"><span>${esc(l.label)}</span><span>${eur(l.amount, 2)}</span></div>`).join('')
@@ -429,7 +471,7 @@ function bind() {
 
   // Estadísticas: secciones vistas, WhatsApp, contacto, preguntas y tiempo en la web
   const secIO = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) track('seccion', e.target.id, true); }), { threshold: .35 });
-  ['alojamiento', 'galeria', 'patio', 'incluye', 'reservar', 'ubicacion', 'faq'].forEach(id => { const el = document.getElementById(id); if (el) secIO.observe(el); });
+  ['alojamiento', 'galeria', 'patio', 'incluye', 'reservar', 'ubicacion', 'faq', 'regalo'].forEach(id => { const el = document.getElementById(id); if (el) secIO.observe(el); });
   document.addEventListener('click', e => {
     const a = e.target.closest('a'); if (!a) return;
     const h = a.getAttribute('href') || '';
@@ -442,6 +484,7 @@ function bind() {
   $('#faqList').addEventListener('toggle', e => { if (e.target.open) track('faq', e.target.querySelector('summary')?.textContent || '', true); }, true);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') track('salida', Math.round((Date.now() - T0) / 1000)); });
 
+  bindGiftCard();
   $('#newsForm').addEventListener('submit', async e => {
     e.preventDefault();
     const f = new FormData(e.target), msg = $('#newsMsg');

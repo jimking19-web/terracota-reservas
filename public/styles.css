@@ -371,3 +371,23 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--t
 .gift span { color: #fde9de; font-size: 15px; }
 .sum-gift { display: flex; gap: 8px; align-items: center; background: var(--terra-l); color: var(--terra-d); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; font-weight: 700; margin: 8px 0 4px; }
 .sum-gift.hint { background: transparent; border: 1.5px dashed var(--terra); font-weight: 600; }
+
+/* Vales regalo */
+.giftcard { background: linear-gradient(180deg, var(--cream), var(--terra-l)); }
+.gc-in { display: grid; grid-template-columns: 1fr 460px; gap: clamp(28px, 6vw, 80px); align-items: start; }
+.gc-points { list-style: none; padding: 0; margin: 20px 0; display: grid; gap: 8px; }
+.gc-points li { display: flex; gap: 10px; align-items: center; font-weight: 600; }
+.gc-points li::before { content: '✦'; color: var(--terra); }
+.gc-photo { margin: 24px 0 0; border-radius: 200px 200px var(--radius) var(--radius); overflow: hidden; aspect-ratio: 4/3; max-width: 460px; box-shadow: var(--shadow); }
+.gc-photo img { width: 100%; height: 100%; object-fit: cover; }
+.gc-card { background: #fff; border-radius: 24px; padding: 26px; box-shadow: var(--shadow); position: sticky; top: 96px; }
+.gc-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1.5px solid var(--line); }
+.gc-top .stepper { margin-top: 6px; }
+.gc-price { text-align: right; }
+.gc-price b { display: block; font-family: var(--display); font-size: 40px; line-height: 1; }
+.gc-price small { color: var(--muted); }
+.gc-send { display: grid; gap: 8px; }
+.gc-send .check { display: flex; gap: 10px; align-items: center; font-size: 14px; font-weight: 500; color: var(--ink); }
+.gc-send input[type=radio] { width: 18px; height: 18px; accent-color: var(--terra); flex: none; }
+.gc-card .form-grid { margin-bottom: 8px; }
+@media (max-width: 960px) { .gc-in { grid-template-columns: 1fr; } .gc-card { position: static; } .gc-photo { display: none; } }
