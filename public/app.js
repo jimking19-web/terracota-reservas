@@ -146,7 +146,7 @@ function fillPhotos(photos) {
   const intro = gen.find(p => p.id !== hero) || gen[0];
   $('#introPhoto').innerHTML = intro ? `<img src="/foto/${intro.id}" alt="${esc(intro.caption || state.unit.name)}" loading="lazy">` : '<div class="ph">Terracota</div>';
   fillPatio(gen);
-  const gcP = gen.find(p => /vela/i.test(p.caption || '')) || gen.find(p => p.category === 'bano') || gen[0];
+  const gcP = gen.find(p => /suite con bañera/i.test(p.caption || '')) || gen.find(p => p.category === 'dormitorio') || gen[0];
   if (gcP) $('#gcPhoto').innerHTML = `<img src="/foto/${gcP.id}" alt="" loading="lazy">`;
   const cats = PHOTO_CATS.filter(([k]) => gen.some(p => p.category === k));
   const inside = gen.filter(p => p.category !== PATIO_CAT);
