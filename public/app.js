@@ -18,13 +18,14 @@ const ICONS = {
   aire: '<path d="M3 8h12a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/>',
   parking: '<path d="M4 3h16v18H4zM9 17V7h4a3 3 0 0 1 0 6H9"/>',
   cocina: '<path d="M4 3v8a3 3 0 0 0 6 0V3M7 3v18M17 3c-2 0-3 3-3 7h3v11"/>',
+  lena: '<path d="M12 3c2 3 5 5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.5 1.5 1.5 2.5 3 2.5-1-2-.5-4.5 0-7zM5 21l14-3M5 18l14 3"/>',
   check: '<path d="M4 12.5l5 5L20 6.5"/>',
 };
 function iconFor(text) {
   const t = text.toLowerCase();
   const k = t.includes('café') || t.includes('cafe') || t.includes('infusi') ? 'cafe' : t.includes('agua') ? 'agua' : t.includes('vino') ? 'vino'
     : t.includes('alberca') || t.includes('piscina') ? 'alberca' : t.includes('vela') ? 'vela' : t.includes('limpi') ? 'limpieza' : t.includes('wifi') ? 'wifi'
-    : t.includes('aire') || t.includes('clima') ? 'aire' : t.includes('aparca') || t.includes('parking') ? 'parking' : t.includes('cocina') ? 'cocina' : 'check';
+    : t.includes('aire') || t.includes('clima') ? 'aire' : t.includes('aparca') || t.includes('parking') ? 'parking' : t.includes('cocina') ? 'cocina' : t.includes('leña') || t.includes('chimenea') ? 'lena' : 'check';
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
 }
 
@@ -306,6 +307,9 @@ function fillGiftCard(s) {
   const months = parseInt(s.voucher_months || '12', 10) || 12;
   $('#gcPoints').innerHTML = [`${eur(gc.price, 0)} por noche${s.voucher_includes ? ' · ' + s.voucher_includes.toLowerCase() : ''}`, 'Sin fecha: lo usan cuando quieran', `Válido durante ${months === 12 ? 'un año' : months + ' meses'}`, 'Lo recibes al momento por email, listo para imprimir']
     .map(x => `<li>${esc(x)}</li>`).join('');
+  const incl = String(s.voucher_list || '').split('\n').map(x => x.trim()).filter(Boolean);
+  $('#gcIncl').hidden = !incl.length;
+  $('#gcList').innerHTML = incl.map(x => `<li>${iconFor(x)}${esc(x)}</li>`).join('');
   drawGiftCard();
 }
 function drawGiftCard() {

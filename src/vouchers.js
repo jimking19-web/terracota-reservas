@@ -106,7 +106,8 @@ export async function sendVoucherEmails(env, site, v, origin) {
     ${v.recipient_name ? `<div style="color:#57493f">Para <b>${esc(v.recipient_name)}</b>${v.buyer_name ? ` · de parte de <b>${esc(v.buyer_name)}</b>` : ''}</div>` : ''}
     ${v.message ? `<div style="font-style:italic;color:#57493f;margin-top:10px">«${esc(v.message)}»</div>` : ''}
     <div style="font-family:Georgia,serif;font-size:26px;letter-spacing:.08em;color:#2a211c;margin-top:14px">${v.code}</div>
-    <div style="font-size:12.5px;color:#8a7b70;margin-top:4px">${esc(cfg.includes)} · Sin fecha · Válido para estancias hasta el ${fdate(v.expires_at)}</div></div>`;
+    <div style="font-size:12.5px;color:#8a7b70;margin-top:4px">Sin fecha · Válido para estancias hasta el ${fdate(v.expires_at)}</div>
+    ${site.voucher_list ? `<div style="font-size:13px;color:#57493f;margin-top:12px;line-height:1.7"><b>Incluye:</b> ${esc(String(site.voucher_list).split('\n').map(x => x.trim()).filter(Boolean).join(' · '))}</div>` : `<div style="font-size:12.5px;color:#8a7b70">${esc(cfg.includes)}</div>`}</div>`;
   const how = '<p style="margin:0 0 12px">Para usarlo, elegid las fechas en nuestra web y escribid el código en «¿Tienes un código promocional o vale regalo?» al reservar. Si queréis, también podéis escribirnos y os lo reservamos nosotros.</p>';
   const toRecipient = v.send_to === 'recipient' && v.recipient_email;
   const hero = site.hero_photo ? `${origin}/foto/${site.hero_photo}` : '';

@@ -487,7 +487,7 @@ const VC_STATUS = { active: ['Activo', 't-confirmed'], used: ['Usado', 't-manual
 async function renderVouchers() {
   const f = $('#vcCfg');
   f.vouchers_enabled.checked = S.settings.vouchers_enabled !== '0';
-  for (const k of ['voucher_price', 'voucher_max_nights', 'voucher_months', 'voucher_includes']) f[k].value = S.settings[k] ?? '';
+  for (const k of ['voucher_price', 'voucher_max_nights', 'voucher_months', 'voucher_includes', 'voucher_list']) f[k].value = S.settings[k] ?? '';
   const r = await api('/api/admin/vouchers');
   const list = r.vouchers || [];
   $('#vcTable').innerHTML = '<thead><tr><th>Código</th><th>Noches</th><th class="num">Importe</th><th>Compra</th><th>Para</th><th>Válido hasta</th><th>Estado</th><th></th></tr></thead><tbody>' +
@@ -502,7 +502,7 @@ async function renderVouchers() {
 }
 $('#vcCfg').onsubmit = async e => {
   e.preventDefault(); const f = e.target;
-  const d = { vouchers_enabled: f.vouchers_enabled.checked ? '1' : '0', voucher_price: f.voucher_price.value.trim(), voucher_max_nights: f.voucher_max_nights.value.trim(), voucher_months: f.voucher_months.value.trim(), voucher_includes: f.voucher_includes.value.trim() };
+  const d = { vouchers_enabled: f.vouchers_enabled.checked ? '1' : '0', voucher_price: f.voucher_price.value.trim(), voucher_max_nights: f.voucher_max_nights.value.trim(), voucher_months: f.voucher_months.value.trim(), voucher_includes: f.voucher_includes.value.trim(), voucher_list: f.voucher_list.value.trim() };
   if (await act(api('/api/admin/settings', 'PUT', d), 'Vales guardados')) { await refresh(); renderVouchers(); }
 };
 $('#vcNew').onclick = async () => {

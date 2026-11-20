@@ -3,7 +3,7 @@
 <title>Vale regalo · Terracota Suites</title><meta name="robots" content="noindex">
 <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=20261120d">
+<link rel="stylesheet" href="/styles.css?v=20261120f">
 <style>
  body{background:var(--sand);min-height:100svh;display:grid;place-items:center;padding:24px}
  .wrapv{width:min(720px,100%)}
@@ -45,6 +45,7 @@ async function load(){
       ${v.recipient?`<div class="v-to">Para <b>${esc(v.recipient)}</b>${v.buyer?` · de parte de <b>${esc(v.buyer)}</b>`:''}</div>`:''}
       ${v.message?`<div class="v-msg">«${esc(v.message)}»</div>`:''}
       <div class="v-small">${esc(s.voucher_includes||'')}${s.voucher_includes?' · ':''}Sin fecha · válido para estancias hasta el ${fd(v.expires)}</div>
+      ${(s.voucher_list||'').trim()?`<div class="v-small" style="text-align:left;line-height:1.7"><b>Incluye:</b> ${esc(s.voucher_list.split('\n').map(x=>x.trim()).filter(Boolean).join(' · '))}</div>`:''}
       <div class="v-code">${esc(v.code)}</div>
       ${v.status==='used'?'<div class="v-small"><b>Este vale ya se ha usado</b></div>':''}
     </div>${v.status==='used'?'<span class="stamp">USADO</span>':''}</div>
