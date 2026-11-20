@@ -64,7 +64,7 @@ function fillSettings(s) {
     const w = eur(Math.round(welcome * 100));
     $('#newsTitle').textContent = `Llévate ${w} de descuento`;
     $('#newsText').textContent = `Apúntate y te enviamos por email un código de ${w} para tu primera reserva directa. Después, solo algún aviso de fechas libres y ofertas.`;
-    $('#topbarText').textContent = `🎁 ${w} de descuento en tu primera reserva directa al apuntarte`;
+    $('#topbarText').innerHTML = `🎁 ${esc(w)} de descuento<span class="tb-long"> en tu primera reserva directa</span> al apuntarte`;
     $('#topbar').hidden = false; document.body.classList.add('has-topbar');
     $('#topbar').onclick = e => { e.preventDefault(); $('#ofertas').scrollIntoView({ behavior: 'smooth' }); setTimeout(() => $('#newsForm input[name=email]').focus({ preventScroll: true }), 600); track('contacto', 'barra descuento'); };
   }

@@ -405,4 +405,4 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--t
 .topbar:hover { background: var(--terra-d); }
 body.has-topbar .nav { top: 38px; }
 html:has(body.has-topbar) { scroll-padding-top: 118px; }
-@media (max-width: 560px) { .topbar { font-size: 12.5px; gap: 8px; } }
+@media (max-width: 560px) { .topbar { font-size: 12.5px; gap: 8px; } .tb-long { display: none; } }
