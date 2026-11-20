@@ -58,6 +58,12 @@ function fillSettings(s) {
   document.title = `${s.site_name} · ${s.address}`;
   const lines = v => String(v || '').split('\n').map(x => x.trim()).filter(Boolean);
   $('#description').innerHTML = String(s.description || '').split(/\n\s*\n/).map(p => `<p>${esc(p)}</p>`).join('');
+  const giftN = parseInt(s.gift_min_nights || '0', 10);
+  if (giftN > 0 && s.gift_text) {
+    $('#gift').hidden = false;
+    $('#giftTitle').textContent = `Regalo en estancias de ${giftN} noches o más`;
+    $('#giftText').textContent = `${s.gift_text}, incluidas sin coste.`;
+  }
   $('#amenities').innerHTML = lines(s.amenities).map(a => `<li class="reveal">${iconFor(a)}${esc(a)}</li>`).join('');
   $('#rules').innerHTML = lines(s.house_rules).map(r => `<li>${esc(r)}</li>`).join('');
   $('#highlights').innerHTML = lines(s.highlights).map(h => { const [a, b] = h.split('|'); return `<div><b>${esc(a)}</b><span>${esc(b || '')}</span></div>`; }).join('');
@@ -280,6 +286,12 @@ async function getQuote() {
   renderSummary();
 }
 
+function giftLine(nights) {
+  const s = state.site.settings, n = parseInt(s.gift_min_nights || '0', 10);
+  if (!n || !s.gift_text) return '';
+  return nights >= n ? `<div class="sum-gift">🎁 Incluido: ${esc(s.gift_text.charAt(0).toLowerCase() + s.gift_text.slice(1))}</div>`
+    : `<div class="sum-gift hint">🎁 Quédate ${n} noches y te regalamos ${esc(s.gift_text.charAt(0).toLowerCase() + s.gift_text.slice(1))}</div>`;
+}
 function renderSummary() {
   const u = state.unit, q = state.quote;
   $('#sumFrom').textContent = q?.ok ? eur(q.total) : `desde ${eur(state.minPrice ?? u.base_price, 0)}`;
@@ -302,6 +314,7 @@ function renderSummary() {
   if (q?.ok) {
     $('#sumLines').innerHTML = q.lines.map(l => `<div class="row ${l.type}"><span>${esc(l.label)}</span><span>${eur(l.amount, 2)}</span></div>`).join('')
       + `<div class="row total"><span>Total</span><span>${eur(q.total, 2)}</span></div>`
+      + giftLine(q.nights)
       + (q.deposit > 0 ? `<div class="deposit-note"><b>Fianza ${eur(q.deposit)}</b> · no se cobra: se retiene en tu tarjeta el día antes de llegar y se libera automáticamente tras la salida.</div>` : '')
       + (q.nightly.length > 1 ? `<details><summary>Precio por noche</summary><ul>${q.nightly.map(n => `<li>${fdate(n.date, { day: 'numeric', month: 'short' })} · ${eur(n.price)}</li>`).join('')}</ul></details>` : '');
     btn.disabled = false; btn.textContent = 'Reservar';

@@ -363,3 +363,11 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--t
   .patio-mosaic button:nth-child(1) { grid-column: 1 / -1; grid-row: span 2; border-radius: 140px 140px 14px 14px; }
   .patio-mosaic button:nth-child(6) { display: none; }
 }
+
+/* Regalo por estancias largas */
+.gift { display: flex; align-items: center; gap: 18px; max-width: 1000px; margin: 22px auto 0; padding: 22px 26px; border-radius: var(--radius); background: var(--terra); color: #fff; box-shadow: 0 16px 40px -20px rgba(181, 87, 59, .8); }
+.gift svg { flex: none; color: #fde9de; }
+.gift b { display: block; font-family: var(--display); font-size: 26px; font-weight: 600; line-height: 1.1; }
+.gift span { color: #fde9de; font-size: 15px; }
+.sum-gift { display: flex; gap: 8px; align-items: center; background: var(--terra-l); color: var(--terra-d); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; font-weight: 700; margin: 8px 0 4px; }
+.sum-gift.hint { background: transparent; border: 1.5px dashed var(--terra); font-weight: 600; }
