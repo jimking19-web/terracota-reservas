@@ -101,7 +101,29 @@ function fillSettings(s) {
   if (s.street) { $('#street').hidden = false; $('#streetText').textContent = s.street; $('#directions').href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(mapQ)}`; }
 }
 
-const PHOTO_CATS = [['salon', 'Salón'], ['cocina', 'Cocina'], ['dormitorio', 'Dormitorio'], ['bano', 'Baño'], ['exterior', 'Alberca y patio']];
+// La galería empieza por el dormitorio; el patio y la alberca tienen su propia sección («El patio»)
+const PHOTO_CATS = [['dormitorio', 'Dormitorio'], ['bano', 'Baño'], ['salon', 'Salón'], ['cocina', 'Cocina']];
+const PATIO_CAT = 'exterior';
+const PATIO_DEFAULT = {
+  eyebrow: 'El patio y la alberca',
+  title: 'Un lugar para perderse',
+  text: 'El corazón de Terracota Suites. Un patio único, levantado entre arcos de piedra, con una alberca privada con cascada, ducha exterior y rincones de sombra pensados para no hacer nada.\n\nCada detalle de la decoración está elegido a mano: barro, piedra, fibras naturales y una luz cálida que lo cambia todo al caer la tarde. Un espacio solo para vosotros, para bañaros, leer, tomar un vino al atardecer o simplemente dejar pasar el tiempo.',
+  points: 'Arcos de piedra\nAlberca privada con cascada\nDucha exterior\nPorche con sofá\nTumbonas al sol',
+};
+function fillPatio(gen) {
+  const s = state.site.settings;
+  const list = gen.filter(p => p.category === PATIO_CAT);
+  state.patioPhotos = list;
+  $('#patio').hidden = !list.length;
+  if (!list.length) return;
+  $('#patioEyebrow').textContent = s.patio_eyebrow || PATIO_DEFAULT.eyebrow;
+  $('#patioTitle').textContent = s.patio_title || PATIO_DEFAULT.title;
+  $('#patioBody').innerHTML = String(s.patio_text || PATIO_DEFAULT.text).split(/\n\s*\n/).map(p => `<p>${esc(p)}</p>`).join('');
+  $('#patioPoints').innerHTML = String(s.patio_points ?? PATIO_DEFAULT.points).split('\n').map(x => x.trim()).filter(Boolean).map(x => `<li>${esc(x)}</li>`).join('');
+  const shown = list.slice(0, 6);
+  $('#patioMosaic').innerHTML = shown.map((p, i) => `<button data-pi="${i}" aria-label="Ver foto"><img src="/foto/${p.id}" alt="${esc(p.caption || '')}" loading="lazy">${i === shown.length - 1 && list.length > shown.length ? `<span class="more">+${list.length - shown.length} fotos</span>` : ''}</button>`).join('');
+  $('#patioAll').textContent = `Ver las ${list.length} fotos del patio`;
+}
 function fillPhotos(photos) {
   const gen = photos.filter(p => !p.unit_id || p.unit_id === state.unit.id);
   state.allPhotos = gen;
@@ -110,16 +132,18 @@ function fillPhotos(photos) {
   if (hero) { bg.style.backgroundImage = `url(/foto/${hero})`; bg.classList.remove('placeholder'); } else bg.classList.add('placeholder');
   const intro = gen.find(p => p.id !== hero) || gen[0];
   $('#introPhoto').innerHTML = intro ? `<img src="/foto/${intro.id}" alt="${esc(intro.caption || state.unit.name)}" loading="lazy">` : '<div class="ph">Terracota</div>';
+  fillPatio(gen);
   const cats = PHOTO_CATS.filter(([k]) => gen.some(p => p.category === k));
-  $('#galTabs').innerHTML = cats.length ? [['', 'Todas'], ...cats].map(([k, l]) => `<button type="button" role="tab" data-cat="${k}">${esc(l)} <small>${k ? gen.filter(p => p.category === k).length : gen.length}</small></button>`).join('') : '';
+  const inside = gen.filter(p => p.category !== PATIO_CAT);
+  $('#galTabs').innerHTML = cats.length ? [['', 'Todas'], ...cats].map(([k, l]) => `<button type="button" role="tab" data-cat="${k}">${esc(l)} <small>${k ? gen.filter(p => p.category === k).length : inside.length}</small></button>`).join('') : '';
   $('#galTabs').hidden = !cats.length;
   showGallery(state.galCat || '');
   $('#openGallery').hidden = !gen.length;
 }
 function showGallery(cat) {
   state.galCat = cat;
-  const gen = state.allPhotos || [];
-  // "Todas": por secciones (salón, cocina, dormitorio, baño, exterior) y dentro de cada una en el orden del panel
+  const gen = (state.allPhotos || []).filter(p => p.category !== PATIO_CAT);
+  // "Todas": por secciones (dormitorio, baño, salón, cocina) y dentro de cada una en el orden del panel
   const rank = k => { const i = PHOTO_CATS.findIndex(c => c[0] === k); return i < 0 ? 99 : i; };
   const list = cat ? gen.filter(p => p.category === cat) : [...gen].sort((a, b) => rank(a.category) - rank(b.category));
   state.photos = list;
@@ -374,7 +398,10 @@ function bind() {
   $('#guestForm').addEventListener('submit', submitBooking);
   $$('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
   $('#gallery').onclick = e => { const b = e.target.closest('button'); if (b && state.photos[Number(b.dataset.i)]) openLightbox(Number(b.dataset.i)); };
-  $('#openGallery').onclick = () => openLightbox(0);
+  $('#openGallery').onclick = () => { showGallery(state.galCat || ''); openLightbox(0); };
+  $('#patioMosaic').onclick = e => { const b = e.target.closest('[data-pi]'); if (!b) return; state.photos = state.patioPhotos; openLightbox(Number(b.dataset.pi)); track('galeria', 'patio'); };
+  $('#patioAll').onclick = () => { state.photos = state.patioPhotos; openLightbox(0); track('galeria', 'patio'); };
+  $('#lightbox').addEventListener('close', () => { if (state.photos === state.patioPhotos) showGallery(state.galCat || ''); });
   $('#galTabs').onclick = e => { const b = e.target.closest('button'); if (b) { showGallery(b.dataset.cat); track('galeria', b.dataset.cat || 'todas'); } };
   $('#lbPrev').onclick = () => openLightbox(lbIndex - 1);
   $('#lbNext').onclick = () => openLightbox(lbIndex + 1);
@@ -383,7 +410,7 @@ function bind() {
 
   // Estadísticas: secciones vistas, WhatsApp, contacto, preguntas y tiempo en la web
   const secIO = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) track('seccion', e.target.id, true); }), { threshold: .35 });
-  ['alojamiento', 'galeria', 'incluye', 'reservar', 'ubicacion', 'faq'].forEach(id => { const el = document.getElementById(id); if (el) secIO.observe(el); });
+  ['alojamiento', 'galeria', 'patio', 'incluye', 'reservar', 'ubicacion', 'faq'].forEach(id => { const el = document.getElementById(id); if (el) secIO.observe(el); });
   document.addEventListener('click', e => {
     const a = e.target.closest('a'); if (!a) return;
     const h = a.getAttribute('href') || '';

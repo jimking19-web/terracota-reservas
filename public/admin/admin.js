@@ -717,8 +717,8 @@ $('#addUnit').onclick = async () => {
 // ---------- VISITAS ----------
 let vDaysRange = 7;
 $('#vRange').onclick = e => { const b = e.target.closest('[data-d]'); if (!b) return; vDaysRange = Number(b.dataset.d); $$('#vRange button').forEach(x => x.classList.toggle('on', x === b)); renderVisits(); };
-const SECTION_NAMES = { alojamiento: 'El alojamiento', galeria: 'Galería', incluye: 'Qué incluye', reservar: 'Calendario y precios', ubicacion: 'Ubicación', faq: 'Preguntas frecuentes' };
-const CAT_NAMES = { todas: 'Todas', salon: 'Salón', cocina: 'Cocina', dormitorio: 'Dormitorio', bano: 'Baño', exterior: 'Alberca y patio' };
+const SECTION_NAMES = { alojamiento: 'El alojamiento', galeria: 'Galería', patio: 'El patio y la alberca', incluye: 'Qué incluye', reservar: 'Calendario y precios', ubicacion: 'Ubicación', faq: 'Preguntas frecuentes' };
+const CAT_NAMES = { todas: 'Todas', patio: 'Fotos del patio', salon: 'Salón', cocina: 'Cocina', dormitorio: 'Dormitorio', bano: 'Baño', exterior: 'Alberca y patio' };
 function hbars(rows, empty = 'Aún no hay datos') {
   if (!rows.length) return `<p class="muted">${empty}</p>`;
   const max = Math.max(...rows.map(r => r.n), 1);

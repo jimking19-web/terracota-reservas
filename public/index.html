@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=20261119c">
+<link rel="stylesheet" href="/styles.css?v=20261120a">
 </head>
 <body>
 
@@ -25,6 +25,7 @@
   <nav class="nav-links">
     <a href="#alojamiento">El alojamiento</a>
     <a href="#galeria">Galería</a>
+    <a href="#patio">El patio</a>
     <a href="#incluye">Qué incluye</a>
     <a href="#ubicacion">Ubicación</a>
     <a href="#reservar" class="btn btn-sm btn-terra">Reservar</a>
@@ -70,6 +71,19 @@
       <button class="btn btn-ghost" id="openGallery">Ver todas las fotos</button></div>
     <div class="gal-tabs" id="galTabs" role="tablist"></div>
     <div class="gallery" id="gallery"></div>
+  </div>
+</section>
+
+<section class="patio" id="patio" hidden>
+  <div class="patio-in">
+    <div class="patio-text">
+      <p class="eyebrow light" id="patioEyebrow">El patio y la alberca</p>
+      <h2 class="display" id="patioTitle">Un lugar para perderse</h2>
+      <div class="patio-body" id="patioBody"></div>
+      <ul class="patio-points" id="patioPoints"></ul>
+      <button class="btn btn-light" id="patioAll">Ver todas las fotos del patio</button>
+    </div>
+    <div class="patio-mosaic" id="patioMosaic"></div>
   </div>
 </section>
 
@@ -230,6 +244,6 @@
   <button class="lb-nav next" id="lbNext" aria-label="Siguiente">›</button>
 </dialog>
 
-<script src="/app.js?v=20261119c" type="module"></script>
+<script src="/app.js?v=20261120a" type="module"></script>
 </body>
 </html>
